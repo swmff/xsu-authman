@@ -1,0 +1,36 @@
+[package]
+name = "xsu-authman"
+version = "0.3.0"
+edition = "2021"
+description = "Authentication manager"
+authors = ["trisuaso", "swmff"]
+homepage = "https://swmff.org"
+repository = "https://github.com/hkauso/xsu"
+license = "MIT"
+
+[features]
+postgres = ["xsu-dataman/postgres"]
+mysql = ["xsu-dataman/mysql"]
+sqlite = ["xsu-dataman/sqlite"]
+# default = ["xsu-dataman/sqlite"] # for development
+
+[dependencies]
+axum = { version = "0.7.5", features = ["macros"] }
+axum-macros = "0.4.1"
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+tokio = { version = "1.38.0", features = ["macros", "rt-multi-thread"] }
+xsu-dataman = { path = "../xsu-dataman", default-features = false }
+xsu-util = { path = "../xsu-util" }
+dotenv = "0.15.0"
+axum-extra = { version = "0.9.3", features = ["cookie"] }
+regex = "1.10.5"
+reqwest = "0.12.5"
+
+[[bin]]
+path = "src/main.rs"
+name = "xsu-authman"
+test = false
+
+[lib]
+doctest = false
