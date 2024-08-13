@@ -1,3 +1,4 @@
+use hcaptcha::Hcaptcha;
 use std::collections::HashMap;
 
 use axum::{
@@ -6,9 +7,9 @@ use axum::{
     Json,
 };
 
+use serde::{Deserialize, Serialize};
 use xsu_dataman::DefaultReturn;
 use xsu_util::ui::BlockList;
-use serde::{Deserialize, Serialize};
 
 /// Basic user structure
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -120,16 +121,20 @@ impl Default for Group {
 }
 
 // props
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Hcaptcha)]
 pub struct ProfileCreate {
     pub username: String,
     pub password: String,
+    #[captcha]
+    pub token: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Hcaptcha)]
 pub struct ProfileLogin {
     pub username: String,
     pub password: String,
+    #[captcha]
+    pub token: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

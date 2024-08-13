@@ -1,25 +1,48 @@
+use crate::model::{AuthError, Profile, ProfileCreate, ProfileMetadata};
 use crate::model::{Group, Notification, NotificationCreate, Permission, UserFollow};
-use crate::model::{Profile, ProfileMetadata, AuthError};
 
+use hcaptcha::Hcaptcha;
 use reqwest::Client as HttpClient;
+use serde::{Deserialize, Serialize};
+
 use xsu_dataman::query as sqlquery;
 use xsu_dataman::utility;
 
 pub type Result<T> = std::result::Result<T, AuthError>;
 
-#[derive(Clone, Debug)]
-pub struct ServerOptions {}
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct HCaptchaConfig {
+    /// HCaptcha site key
+    ///
+    /// Testing: 10000000-ffff-ffff-ffff-000000000001
+    pub site_key: String,
+    /// HCaptcha secret
+    ///
+    /// Testing: 0x0000000000000000000000000000000000000000
+    pub secret: String,
+}
 
-impl ServerOptions {
-    /// Enable all options
-    pub fn truthy() -> Self {
-        Self {}
+impl Default for HCaptchaConfig {
+    fn default() -> Self {
+        Self {
+            // these are testing keys - do NOT use them in production!
+            site_key: "10000000-ffff-ffff-ffff-000000000001".to_string(),
+            secret: "0x0000000000000000000000000000000000000000".to_string(),
+        }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct ServerOptions {
+    /// HCaptcha configuration
+    pub captcha: HCaptchaConfig,
 }
 
 impl Default for ServerOptions {
     fn default() -> Self {
-        Self {}
+        Self {
+            captcha: HCaptchaConfig::default(),
+        }
     }
 }
 
@@ -284,7 +307,20 @@ impl Database {
     ///
     /// # Arguments:
     /// * `username` - `String` of the user's `username`
-    pub async fn create_profile(&self, username: String, password: String) -> Result<String> {
+    /// * `password`
+    /// * `token` - hcaptcha token
+    pub async fn create_profile(&self, props: ProfileCreate) -> Result<String> {
+        let username = props.username.clone();
+        let password = props.password.clone();
+
+        // check captcha
+        if let Err(_) = props
+            .valid_response(&self.config.captcha.secret, None)
+            .await
+        {
+            return Err(AuthError::NotAllowed);
+        }
+
         // make sure user doesn't already exists
         if let Ok(_) = &self.get_profile_by_username(username.clone()).await {
             return Err(AuthError::MustBeUnique);

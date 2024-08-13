@@ -6,13 +6,14 @@ use crate::model::{
 };
 use axum::body::Bytes;
 use axum::http::HeaderMap;
+use hcaptcha::Hcaptcha;
 use serde::{Deserialize, Serialize};
 use xsu_dataman::DefaultReturn;
 
 use axum::response::IntoResponse;
 use axum::{
     extract::{Path, Query, State},
-    routing::{get, post, delete},
+    routing::{delete, get, post},
     Json, Router,
 };
 use axum_extra::extract::cookie::CookieJar;
@@ -63,10 +64,7 @@ pub async fn create_profile_request(
         );
     }
 
-    let res = match database
-        .create_profile(props.username, props.password)
-        .await
-    {
+    let res = match database.create_profile(props).await {
         Ok(r) => r,
         Err(e) => {
             return (
@@ -111,6 +109,23 @@ pub async fn login_request(
     State(database): State<Database>,
     Json(props): Json<ProfileLogin>,
 ) -> impl IntoResponse {
+    // check hcaptcha
+    if let Err(e) = props
+        .valid_response(&database.config.captcha.secret, None)
+        .await
+    {
+        return (
+            HeaderMap::new(),
+            serde_json::to_string(&DefaultReturn {
+                success: false,
+                message: e.to_string(),
+                payload: (),
+            })
+            .unwrap(),
+        );
+    }
+
+    // ...
     let mut ua = match database
         .get_profile_by_username_password(props.username.clone(), props.password.clone())
         .await

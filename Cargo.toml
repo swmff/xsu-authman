@@ -1,6 +1,6 @@
 [package]
 name = "xsu-authman"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Authentication manager"
 authors = ["trisuaso", "swmff"]
@@ -26,6 +26,7 @@ dotenv = "0.15.0"
 axum-extra = { version = "0.9.3", features = ["cookie"] }
 regex = "1.10.5"
 reqwest = "0.12.5"
+hcaptcha = "2.4.6"
 
 [[bin]]
 path = "src/main.rs"
