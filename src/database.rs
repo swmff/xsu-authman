@@ -1129,6 +1129,62 @@ impl Database {
         }
     }
 
+    /// Force remove the following status of `user` on `following` ([`UserFollow`])
+    ///
+    /// # Arguments:
+    /// * `props` - [`UserFollow`]
+    pub async fn force_remove_user_follow(&self, props: &mut UserFollow) -> Result<()> {
+        // users cannot be the same
+        if props.user == props.following {
+            return Err(AuthError::Other);
+        }
+
+        // check if follow exists
+        if let Ok(_) = self
+            .get_follow(props.user.to_owned(), props.following.to_owned())
+            .await
+        {
+            // delete
+            let query: String =
+                if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
+                    "DELETE FROM \"xfollows\" WHERE \"user\" = ? AND \"following\" = ?"
+                } else {
+                    "DELETE FROM \"xfollows\" WHERE \"user\" = $1 AND \"following\" = $2"
+                }
+                .to_string();
+
+            let c = &self.base.db.client;
+            match sqlquery(&query)
+                .bind::<&String>(&props.user)
+                .bind::<&String>(&props.following)
+                .execute(c)
+                .await
+            {
+                Ok(_) => {
+                    self.base
+                        .cachedb
+                        .decr(format!("xsulib.authman.following_count:{}", props.user))
+                        .await;
+
+                    self.base
+                        .cachedb
+                        .decr(format!(
+                            "xsulib.authman.followers_count:{}",
+                            props.following
+                        ))
+                        .await;
+
+                    return Ok(());
+                }
+                Err(_) => return Err(AuthError::Other),
+            };
+        }
+
+        // return
+        // we can only remove following here, not add it
+        Ok(())
+    }
+
     // notifications
 
     // GET

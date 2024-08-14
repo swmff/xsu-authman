@@ -25,7 +25,6 @@ pub fn routes(database: Database) -> Router {
         .route("/profile/:username/password", post(set_password_request))
         .route("/profile/:username/metadata", post(update_metdata_request))
         .route("/profile/:username/avatar", get(profile_avatar_request))
-        .route("/profile/:username/follow", post(profile_follow_request))
         .route("/profile/:username", delete(delete_other_request))
         .route("/profile/:username", get(profile_inspect_request))
         // notifications
@@ -746,57 +745,6 @@ pub async fn update_metdata_request(
     // return
     match database
         .edit_profile_metadata_by_name(username, props.metadata)
-        .await
-    {
-        Ok(_) => Json(DefaultReturn {
-            success: true,
-            message: "Acceptable".to_string(),
-            payload: (),
-        }),
-        Err(e) => Json(DefaultReturn {
-            success: false,
-            message: e.to_string(),
-            payload: (),
-        }),
-    }
-}
-
-/// Toggle following on the given user
-pub async fn profile_follow_request(
-    jar: CookieJar,
-    Path(username): Path<String>,
-    State(database): State<Database>,
-) -> impl IntoResponse {
-    // get user from token
-    let auth_user = match jar.get("__Secure-Token") {
-        Some(c) => match database
-            .get_profile_by_unhashed(c.value_trimmed().to_string())
-            .await
-        {
-            Ok(ua) => ua,
-            Err(e) => {
-                return Json(DefaultReturn {
-                    success: false,
-                    message: e.to_string(),
-                    payload: (),
-                });
-            }
-        },
-        None => {
-            return Json(DefaultReturn {
-                success: false,
-                message: AuthError::NotAllowed.to_string(),
-                payload: (),
-            });
-        }
-    };
-
-    // return
-    match database
-        .toggle_user_follow(&mut UserFollow {
-            user: auth_user.username,
-            following: username,
-        })
         .await
     {
         Ok(_) => Json(DefaultReturn {
