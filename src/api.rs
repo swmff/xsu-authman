@@ -2,7 +2,7 @@
 use crate::database::Database;
 use crate::model::{
     AuthError, Permission, ProfileCreate, ProfileLogin, SetProfileGroup, SetProfileMetadata,
-    SetProfilePassword, UserFollow,
+    SetProfilePassword,
 };
 use axum::body::Bytes;
 use axum::http::HeaderMap;
