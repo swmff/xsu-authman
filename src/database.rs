@@ -644,6 +644,11 @@ impl Database {
                     .remove(format!("xsulib.authman.following_count:{}", name))
                     .await;
 
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.notification_count:{}", name))
+                    .await;
+
                 Ok(())
             }
             Err(_) => Err(AuthError::Other),
