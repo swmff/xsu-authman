@@ -21,7 +21,7 @@ use axum_extra::extract::cookie::CookieJar;
 pub fn routes(database: Database) -> Router {
     Router::new()
         // profiles
-        .route("/profile/:username/group", post(set_group_request))
+        // .route("/profile/:username/group", post(set_group_request))
         .route("/profile/:username/password", post(set_password_request))
         .route("/profile/:username/metadata", post(update_metdata_request))
         .route("/profile/:username/avatar", get(profile_avatar_request))
@@ -356,11 +356,19 @@ pub async fn delete_me_request(
         }
     };
 
+    // get profile
+    let hashed = xsu_util::hash::hash_salted(req.password, auth_user.salt);
+
+    if hashed != auth_user.password {
+        return Json(DefaultReturn {
+            success: false,
+            message: AuthError::NotAllowed.to_string(),
+            payload: (),
+        });
+    }
+
     // return
-    if let Err(e) = database
-        .delete_profile_by_username_password(auth_user.username, req.password)
-        .await
-    {
+    if let Err(e) = database.delete_profile_by_id(auth_user.id).await {
         return Json(DefaultReturn {
             success: false,
             message: e.to_string(),
@@ -779,7 +787,7 @@ pub async fn update_metdata_request(
 /// Delete another user
 pub async fn delete_other_request(
     jar: CookieJar,
-    Path(username): Path<String>,
+    Path(id): Path<String>,
     State(database): State<Database>,
 ) -> impl IntoResponse {
     // get user from token
@@ -807,7 +815,7 @@ pub async fn delete_other_request(
     };
 
     // check permission
-    if auth_user.username != username {
+    if auth_user.username != id {
         let group = match database.get_group_by_id(auth_user.group).await {
             Ok(g) => g,
             Err(e) => {
@@ -829,7 +837,7 @@ pub async fn delete_other_request(
         }
 
         // get other user
-        let other_user = match database.get_profile_by_username(username.clone()).await {
+        let other_user = match database.get_profile_by_id(id.clone()).await {
             Ok(ua) => ua,
             Err(e) => {
                 return Json(DefaultReturn {
@@ -875,7 +883,7 @@ pub async fn delete_other_request(
     }
 
     // return
-    match database.delete_profile_by_username(username).await {
+    match database.delete_profile_by_id(id).await {
         Ok(_) => Json(DefaultReturn {
             success: true,
             message: "Acceptable".to_string(),

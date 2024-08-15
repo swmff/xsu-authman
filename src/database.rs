@@ -619,16 +619,18 @@ impl Database {
     /// Delete a profile
     ///
     /// **VALIDATION SHOULD BE DONE *BEFORE* THIS!!**
-    async fn delete_profile(&self, name: String) -> Result<()> {
+    async fn delete_profile(&self, id: String) -> Result<()> {
+        let user = self.get_profile_by_id(id.clone()).await.unwrap();
+
         // delete user
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
-            "DELETE FROM \"xprofiles\" WHERE \"username\" = ?"
+            "DELETE FROM \"xprofiles\" WHERE \"id\" = ?"
         } else {
-            "DELETE FROM \"xprofiles\" WHERE \"username\" = $1"
+            "DELETE FROM \"xprofiles\" WHERE \"id\" = $1"
         };
 
         let c = &self.base.db.client;
-        match sqlquery(query).bind::<&String>(&name).execute(c).await {
+        match sqlquery(query).bind::<&String>(&id).execute(c).await {
             Ok(_) => {
                 let query: &str =
                     if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
@@ -637,7 +639,7 @@ impl Database {
                         "DELETE FROM \"xnotifications\" WHERE \"recipient\" = $1"
                     };
 
-                if let Err(_) = sqlquery(query).bind::<&String>(&name).execute(c).await {
+                if let Err(_) = sqlquery(query).bind::<&String>(&id).execute(c).await {
                     return Err(AuthError::Other);
                 };
 
@@ -649,8 +651,8 @@ impl Database {
                     };
 
                 if let Err(_) = sqlquery(query)
-                    .bind::<&String>(&name)
-                    .bind::<&String>(&name)
+                    .bind::<&String>(&id)
+                    .bind::<&String>(&id)
                     .execute(c)
                     .await
                 {
@@ -666,7 +668,7 @@ impl Database {
                         "DELETE FROM \"xquestions\" WHERE \"recipient\" = $1"
                     };
 
-                if let Err(_) = sqlquery(query).bind::<&String>(&name).execute(c).await {
+                if let Err(_) = sqlquery(query).bind::<&String>(&id).execute(c).await {
                     return Err(AuthError::Other);
                 };
 
@@ -678,7 +680,7 @@ impl Database {
                         "DELETE FROM \"xquestions\" WHERE \"author\" = $1"
                     };
 
-                if let Err(_) = sqlquery(query).bind::<&String>(&name).execute(c).await {
+                if let Err(_) = sqlquery(query).bind::<&String>(&id).execute(c).await {
                     return Err(AuthError::Other);
                 };
 
@@ -690,7 +692,7 @@ impl Database {
                         "DELETE FROM \"xresponses\" WHERE \"author\" = $1"
                     };
 
-                if let Err(_) = sqlquery(query).bind::<&String>(&name).execute(c).await {
+                if let Err(_) = sqlquery(query).bind::<&String>(&id).execute(c).await {
                     return Err(AuthError::Other);
                 };
 
@@ -703,7 +705,7 @@ impl Database {
                     };
 
                 if let Err(_) = sqlquery(query)
-                    .bind::<&String>(&format!("%\"author\":\"{name}\"%"))
+                    .bind::<&String>(&format!("%\"author\":\"{id}\"%"))
                     .execute(c)
                     .await
                 {
@@ -712,33 +714,38 @@ impl Database {
 
                 self.base
                     .cachedb
-                    .remove(format!("xsulib.sparkler.response_count:{}", name))
+                    .remove(format!("xsulib.sparkler.response_count:{}", id))
                     .await;
 
                 self.base
                     .cachedb
-                    .remove(format!("xsulib.sparkler.global_question_count:{}", name))
+                    .remove(format!("xsulib.sparkler.global_question_count:{}", id))
                     .await;
 
                 // ...
                 self.base
                     .cachedb
-                    .remove(format!("xsulib.authman.profile:{}", name))
+                    .remove(format!("xsulib.authman.profile:{}", id))
                     .await;
 
                 self.base
                     .cachedb
-                    .remove(format!("xsulib.authman.followers_count:{}", name))
+                    .remove(format!("xsulib.authman.profile:{}", user.username))
                     .await;
 
                 self.base
                     .cachedb
-                    .remove(format!("xsulib.authman.following_count:{}", name))
+                    .remove(format!("xsulib.authman.followers_count:{}", id))
                     .await;
 
                 self.base
                     .cachedb
-                    .remove(format!("xsulib.authman.notification_count:{}", name))
+                    .remove(format!("xsulib.authman.following_count:{}", id))
+                    .await;
+
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.notification_count:{}", id))
                     .await;
 
                 Ok(())
@@ -747,9 +754,9 @@ impl Database {
         }
     }
 
-    /// Delete an existing [`Profile`] by its `username`
-    pub async fn delete_profile_by_username(&self, name: String) -> Result<()> {
-        let user = match self.get_profile_by_username(name.clone()).await {
+    /// Delete an existing [`Profile`] by its `id`
+    pub async fn delete_profile_by_id(&self, id: String) -> Result<()> {
+        let user = match self.get_profile_by_id(id.clone()).await {
             Ok(ua) => ua,
             Err(e) => return Err(e),
         };
@@ -765,35 +772,7 @@ impl Database {
         }
 
         // delete
-        self.delete_profile(name).await
-    }
-
-    /// Delete an existing [`Profile`] by its `username` and `password`
-    pub async fn delete_profile_by_username_password(
-        &self,
-        name: String,
-        password: String,
-    ) -> Result<()> {
-        let user = match self
-            .get_profile_by_username_password(name.clone(), password.clone())
-            .await
-        {
-            Ok(ua) => ua,
-            Err(e) => return Err(e),
-        };
-
-        // make sure they aren't a manager
-        let group = match self.get_group_by_id(user.group).await {
-            Ok(g) => g,
-            Err(_) => return Err(AuthError::Other),
-        };
-
-        if group.permissions.contains(&Permission::Manager) {
-            return Err(AuthError::NotAllowed);
-        }
-
-        // delete
-        self.delete_profile(name).await
+        self.delete_profile(id).await
     }
 
     // groups
