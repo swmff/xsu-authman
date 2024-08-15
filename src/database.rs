@@ -170,7 +170,7 @@ impl Database {
             id: row.get("id").unwrap().to_string(),
             username: row.get("username").unwrap().to_string(),
             password: row.get("password").unwrap().to_string(),
-            salt: row.get("salt").unwrap().to_string(),
+            salt: row.get("salt").unwrap_or(&"".to_string()).to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -227,7 +227,7 @@ impl Database {
             id: row.get("id").unwrap().to_string(),
             username: row.get("username").unwrap().to_string(),
             password: row.get("password").unwrap().to_string(),
-            salt: row.get("salt").unwrap().to_string(),
+            salt: row.get("salt").unwrap_or(&"".to_string()).to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -256,7 +256,15 @@ impl Database {
             .await;
 
         if cached.is_some() {
-            return Ok(serde_json::from_str::<Profile>(cached.unwrap().as_str()).unwrap());
+            match serde_json::from_str::<Profile>(cached.unwrap().as_str()) {
+                Ok(p) => return Ok(p),
+                Err(_) => {
+                    self.base
+                        .cachedb
+                        .remove(format!("xsulib.authman.profile:{}", username))
+                        .await;
+                }
+            };
         }
 
         // ...
@@ -281,7 +289,7 @@ impl Database {
             id: row.get("id").unwrap().to_string(),
             username: row.get("username").unwrap().to_string(),
             password: row.get("password").unwrap().to_string(),
-            salt: row.get("salt").unwrap().to_string(),
+            salt: row.get("salt").unwrap_or(&"".to_string()).to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -321,7 +329,15 @@ impl Database {
             .await;
 
         if cached.is_some() {
-            return Ok(serde_json::from_str::<Profile>(cached.unwrap().as_str()).unwrap());
+            match serde_json::from_str::<Profile>(cached.unwrap().as_str()) {
+                Ok(p) => return Ok(p),
+                Err(_) => {
+                    self.base
+                        .cachedb
+                        .remove(format!("xsulib.authman.profile:{}", id))
+                        .await;
+                }
+            };
         }
 
         // ...
@@ -342,7 +358,7 @@ impl Database {
             id: row.get("id").unwrap().to_string(),
             username: row.get("username").unwrap().to_string(),
             password: row.get("password").unwrap().to_string(),
-            salt: row.get("salt").unwrap().to_string(),
+            salt: row.get("salt").unwrap_or(&"".to_string()).to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -560,23 +576,31 @@ impl Database {
         new_password: String,
     ) -> Result<()> {
         // make sure user exists
-        if let Err(e) = self
-            .get_profile_by_username_password(name.clone(), password.clone())
-            .await
-        {
-            return Err(e);
+        let ua = match self.get_profile_by_username(name.clone()).await {
+            Ok(ua) => ua,
+            Err(e) => return Err(e),
         };
+
+        // check password
+        let password_hashed = xsu_util::hash::hash_salted(password, ua.salt);
+
+        if password_hashed != ua.password {
+            return Err(AuthError::NotAllowed);
+        }
 
         // update user
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
-            "UPDATE \"xprofiles\" SET \"password\" = ? WHERE \"username\" = ?"
+            "UPDATE \"xprofiles\" SET \"password\" = ?, \"salt\" = ? WHERE \"username\" = ?"
         } else {
-            "UPDATE \"xprofiles\" SET (\"password\") = ($1) WHERE \"username\" = $2"
+            "UPDATE \"xprofiles\" SET (\"password\", \"salt\") = ($1, $2) WHERE \"username\" = $3"
         };
+
+        let new_salt = xsu_util::hash::salt();
 
         let c = &self.base.db.client;
         match sqlquery(query)
-            .bind::<&String>(&xsu_util::hash::hash(new_password))
+            .bind::<&String>(&xsu_util::hash::hash_salted(new_password, new_salt.clone()))
+            .bind::<&String>(&new_salt)
             .bind::<&String>(&name)
             .execute(c)
             .await

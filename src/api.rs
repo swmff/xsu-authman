@@ -126,7 +126,7 @@ pub async fn login_request(
 
     // ...
     let mut ua = match database
-        .get_profile_by_username_password(props.username.clone(), props.password.clone())
+        .get_profile_by_username(props.username.clone())
         .await
     {
         Ok(ua) => ua,
@@ -143,6 +143,22 @@ pub async fn login_request(
         }
     };
 
+    // check password
+    let input_password = xsu_util::hash::hash_salted(props.password.clone(), ua.salt);
+
+    if input_password != ua.password {
+        return (
+            HeaderMap::new(),
+            serde_json::to_string(&DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            })
+            .unwrap(),
+        );
+    }
+
+    // ...
     let token = xsu_dataman::utility::uuid();
     let token_hashed = xsu_dataman::utility::hash(token.clone());
 
