@@ -953,11 +953,11 @@ impl Database {
                         },
                         match self.get_profile_by_id(user).await {
                             Ok(ua) => ua,
-                            Err(e) => return Err(e),
+                            Err(_) => continue,
                         },
                         match self.get_profile_by_id(following).await {
                             Ok(ua) => ua,
-                            Err(e) => return Err(e),
+                            Err(_) => continue,
                         },
                     ))
                 }
@@ -1094,11 +1094,11 @@ impl Database {
                         },
                         match self.get_profile_by_id(user).await {
                             Ok(ua) => ua,
-                            Err(e) => return Err(e),
+                            Err(_) => continue,
                         },
                         match self.get_profile_by_id(following).await {
                             Ok(ua) => ua,
-                            Err(e) => return Err(e),
+                            Err(_) => continue,
                         },
                     ))
                 }
