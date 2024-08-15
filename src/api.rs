@@ -254,7 +254,7 @@ pub async fn delete_all_notifications_request(
 
     // return
     if let Err(e) = database
-        .delete_notifications_by_recipient(auth_user.username.clone(), auth_user)
+        .delete_notifications_by_recipient(auth_user.id.clone(), auth_user)
         .await
     {
         return Json(DefaultReturn {

@@ -302,6 +302,66 @@ impl Database {
         Ok(user)
     }
 
+    /// Get a user by their id
+    ///
+    /// # Arguments:
+    /// * `id` - `String` of the user's username
+    pub async fn get_profile_by_id(&self, mut id: String) -> Result<Profile> {
+        id = id.to_lowercase();
+
+        // check in cache
+        let cached = self
+            .base
+            .cachedb
+            .get(format!("xsulib.authman.profile:{}", id))
+            .await;
+
+        if cached.is_some() {
+            return Ok(serde_json::from_str::<Profile>(cached.unwrap().as_str()).unwrap());
+        }
+
+        // ...
+        let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
+            "SELECT * FROM \"xprofiles\" WHERE \"id\" = ?"
+        } else {
+            "SELECT * FROM \"xprofiles\" WHERE \"id\" = $1"
+        };
+
+        let c = &self.base.db.client;
+        let row = match sqlquery(query).bind::<&String>(&id).fetch_one(c).await {
+            Ok(r) => self.base.textify_row(r, Vec::new()).0,
+            Err(_) => return Err(AuthError::NotFound),
+        };
+
+        // store in cache
+        let user = Profile {
+            id: row.get("id").unwrap().to_string(),
+            username: row.get("username").unwrap().to_string(),
+            password: row.get("password").unwrap().to_string(),
+            tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
+            metadata: match serde_json::from_str(row.get("metadata").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
+            group: row.get("gid").unwrap().parse::<i32>().unwrap_or(0),
+            joined: row.get("joined").unwrap().parse::<u128>().unwrap(),
+        };
+
+        self.base
+            .cachedb
+            .set(
+                format!("xsulib.authman.profile:{}", id),
+                serde_json::to_string::<Profile>(&user).unwrap(),
+            )
+            .await;
+
+        // return
+        Ok(user)
+    }
+
     // SET
     /// Create a new user given their username. Returns their unhashed token
     ///
@@ -796,7 +856,7 @@ impl Database {
     ///
     /// # Arguments:
     /// * `user`
-    pub async fn get_followers(&self, user: String) -> Result<Vec<UserFollow>> {
+    pub async fn get_followers(&self, user: String) -> Result<Vec<(UserFollow, Profile, Profile)>> {
         // fetch from database
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
             "SELECT * FROM \"xfollows\" WHERE \"following\" = ?"
@@ -811,10 +871,24 @@ impl Database {
 
                 for row in u {
                     let row = self.base.textify_row(row, Vec::new()).0;
-                    out.push(UserFollow {
-                        user: row.get("user").unwrap().to_string(),
-                        following: row.get("following").unwrap().to_string(),
-                    })
+
+                    let user = row.get("user").unwrap().to_string();
+                    let following = row.get("following").unwrap().to_string();
+
+                    out.push((
+                        UserFollow {
+                            user: user.clone(),
+                            following: following.clone(),
+                        },
+                        match self.get_profile_by_id(user).await {
+                            Ok(ua) => ua,
+                            Err(e) => return Err(e),
+                        },
+                        match self.get_profile_by_id(following).await {
+                            Ok(ua) => ua,
+                            Err(e) => return Err(e),
+                        },
+                    ))
                 }
 
                 out
@@ -835,7 +909,7 @@ impl Database {
         &self,
         user: String,
         page: i32,
-    ) -> Result<Vec<UserFollow>> {
+    ) -> Result<Vec<(UserFollow, Profile, Profile)>> {
         // fetch from database
         let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
         {
@@ -857,10 +931,24 @@ impl Database {
 
                 for row in u {
                     let row = self.base.textify_row(row, Vec::new()).0;
-                    out.push(UserFollow {
-                        user: row.get("user").unwrap().to_string(),
-                        following: row.get("following").unwrap().to_string(),
-                    })
+
+                    let user = row.get("user").unwrap().to_string();
+                    let following = row.get("following").unwrap().to_string();
+
+                    out.push((
+                        UserFollow {
+                            user: user.clone(),
+                            following: following.clone(),
+                        },
+                        match self.get_profile_by_id(user).await {
+                            Ok(ua) => ua,
+                            Err(e) => return Err(e),
+                        },
+                        match self.get_profile_by_id(following).await {
+                            Ok(ua) => ua,
+                            Err(e) => return Err(e),
+                        },
+                    ))
                 }
 
                 out
@@ -909,7 +997,7 @@ impl Database {
     ///
     /// # Arguments:
     /// * `user`
-    pub async fn get_following(&self, user: String) -> Result<Vec<UserFollow>> {
+    pub async fn get_following(&self, user: String) -> Result<Vec<(UserFollow, Profile, Profile)>> {
         // fetch from database
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
             "SELECT * FROM \"xfollows\" WHERE \"user\" = ?"
@@ -924,10 +1012,24 @@ impl Database {
 
                 for row in u {
                     let row = self.base.textify_row(row, Vec::new()).0;
-                    out.push(UserFollow {
-                        user: row.get("user").unwrap().to_string(),
-                        following: row.get("following").unwrap().to_string(),
-                    })
+
+                    let user = row.get("user").unwrap().to_string();
+                    let following = row.get("following").unwrap().to_string();
+
+                    out.push((
+                        UserFollow {
+                            user: user.clone(),
+                            following: following.clone(),
+                        },
+                        match self.get_profile_by_id(user).await {
+                            Ok(ua) => ua,
+                            Err(e) => return Err(e),
+                        },
+                        match self.get_profile_by_id(following).await {
+                            Ok(ua) => ua,
+                            Err(e) => return Err(e),
+                        },
+                    ))
                 }
 
                 out
@@ -948,7 +1050,7 @@ impl Database {
         &self,
         user: String,
         page: i32,
-    ) -> Result<Vec<UserFollow>> {
+    ) -> Result<Vec<(UserFollow, Profile, Profile)>> {
         // fetch from database
         let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
         {
@@ -970,10 +1072,24 @@ impl Database {
 
                 for row in u {
                     let row = self.base.textify_row(row, Vec::new()).0;
-                    out.push(UserFollow {
-                        user: row.get("user").unwrap().to_string(),
-                        following: row.get("following").unwrap().to_string(),
-                    })
+
+                    let user = row.get("user").unwrap().to_string();
+                    let following = row.get("following").unwrap().to_string();
+
+                    out.push((
+                        UserFollow {
+                            user: user.clone(),
+                            following: following.clone(),
+                        },
+                        match self.get_profile_by_id(user).await {
+                            Ok(ua) => ua,
+                            Err(e) => return Err(e),
+                        },
+                        match self.get_profile_by_id(following).await {
+                            Ok(ua) => ua,
+                            Err(e) => return Err(e),
+                        },
+                    ))
                 }
 
                 out
@@ -1030,8 +1146,9 @@ impl Database {
         }
 
         // make sure both users exist
-        if let Err(e) = self.get_profile_by_username(props.user.to_owned()).await {
-            return Err(e);
+        let user_1 = match self.get_profile_by_username(props.user.to_owned()).await {
+            Ok(ua) => ua,
+            Err(e) => return Err(e),
         };
 
         // make sure both users exist
@@ -1117,7 +1234,10 @@ impl Database {
                 // create notification
                 if let Err(e) = self
                     .create_notification(NotificationCreate {
-                        title: format!("[@{}](/@{}) followed you!", props.user, props.user),
+                        title: format!(
+                            "[@{}](/@{}) followed you!",
+                            user_1.username, user_1.username
+                        ),
                         content: String::new(),
                         address: format!("/@{}", props.user),
                         recipient: props.following.clone(),
@@ -1394,7 +1514,7 @@ impl Database {
         };
 
         // check username
-        if user.username != notification.recipient {
+        if user.id != notification.recipient {
             // check permission
             let group = match self.get_group_by_id(user.group).await {
                 Ok(g) => g,
@@ -1457,7 +1577,7 @@ impl Database {
         };
 
         // check username
-        if user.username != recipient {
+        if user.id != recipient {
             // check permission
             let group = match self.get_group_by_id(user.group).await {
                 Ok(g) => g,

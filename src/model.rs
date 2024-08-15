@@ -70,9 +70,9 @@ impl Default for ProfileMetadata {
 /// Basic follow structure
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserFollow {
-    /// The username of the user following
+    /// The ID of the user following
     pub user: String,
-    /// The username of the user they are following
+    /// The ID of the user they are following
     pub following: String,
 }
 
