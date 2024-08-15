@@ -100,7 +100,8 @@ impl Database {
                 tokens   TEXT,
                 metadata TEXT,
                 joined   TEXT,
-                gid      TEXT
+                gid      TEXT,
+                salt     TEXT
             )",
         )
         .execute(c)
@@ -169,6 +170,7 @@ impl Database {
             id: row.get("id").unwrap().to_string(),
             username: row.get("username").unwrap().to_string(),
             password: row.get("password").unwrap().to_string(),
+            salt: row.get("salt").unwrap().to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -225,6 +227,7 @@ impl Database {
             id: row.get("id").unwrap().to_string(),
             username: row.get("username").unwrap().to_string(),
             password: row.get("password").unwrap().to_string(),
+            salt: row.get("salt").unwrap().to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -278,6 +281,7 @@ impl Database {
             id: row.get("id").unwrap().to_string(),
             username: row.get("username").unwrap().to_string(),
             password: row.get("password").unwrap().to_string(),
+            salt: row.get("salt").unwrap().to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -338,6 +342,7 @@ impl Database {
             id: row.get("id").unwrap().to_string(),
             username: row.get("username").unwrap().to_string(),
             password: row.get("password").unwrap().to_string(),
+            salt: row.get("salt").unwrap().to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -408,20 +413,22 @@ impl Database {
 
         // ...
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
-            "INSERT INTO \"xprofiles\" VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \"xprofiles\" VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         } else {
-            "INSERT INTO \"xprofiles\" VALUES ($1, $2, $3, $4, $5, $6, $7)"
+            "INSERT INTO \"xprofiles\" VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
         };
 
         let user_token_unhashed: String = xsu_dataman::utility::uuid();
         let user_token_hashed: String = xsu_dataman::utility::hash(user_token_unhashed.clone());
+        let salt: String = xsu_util::hash::salt();
+
         let timestamp = utility::unix_epoch_timestamp().to_string();
 
         let c = &self.base.db.client;
         match sqlquery(query)
             .bind::<&String>(&xsu_dataman::utility::uuid())
             .bind::<&String>(&username.to_lowercase())
-            .bind::<&String>(&xsu_dataman::utility::hash(password))
+            .bind::<&String>(&xsu_util::hash::hash_salted(password, salt.clone()))
             .bind::<&String>(
                 &serde_json::to_string::<Vec<String>>(&vec![user_token_hashed]).unwrap(),
             )
@@ -430,6 +437,7 @@ impl Database {
             )
             .bind::<&String>(&timestamp)
             .bind::<&i32>(&0)
+            .bind::<&String>(&salt)
             .execute(c)
             .await
         {

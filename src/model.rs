@@ -20,6 +20,8 @@ pub struct Profile {
     pub username: String,
     /// Hashed user password
     pub password: String,
+    /// User password salt
+    pub salt: String,
     /// User login tokens
     pub tokens: Vec<String>,
     /// Extra user information
@@ -36,6 +38,7 @@ impl Default for Profile {
             id: String::new(),
             username: String::new(),
             password: String::new(),
+            salt: String::new(),
             tokens: Vec::new(),
             metadata: ProfileMetadata::default(),
             group: 0,
