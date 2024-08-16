@@ -951,7 +951,7 @@ impl Database {
                             user: user.clone(),
                             following: following.clone(),
                         },
-                        match self.get_profile_by_id(user).await {
+                        match self.get_profile_by_id(user.clone()).await {
                             Ok(ua) => ua,
                             Err(e) => {
                                 println!("({}) UID 'user' {}", e.to_string(), user);
@@ -959,7 +959,7 @@ impl Database {
                                 continue;
                             }
                         },
-                        match self.get_profile_by_id(following).await {
+                        match self.get_profile_by_id(following.clone()).await {
                             Ok(ua) => ua,
                             Err(e) => {
                                 println!("({}) UID 'following' {}", e.to_string(), following);
@@ -1040,7 +1040,7 @@ impl Database {
                             user: user.clone(),
                             following: following.clone(),
                         },
-                        match self.get_profile_by_id(user).await {
+                        match self.get_profile_by_id(user.clone()).await {
                             Ok(ua) => ua,
                             Err(e) => {
                                 println!("({}) UID 'user' {}", e.to_string(), user);
@@ -1048,7 +1048,7 @@ impl Database {
                                 continue;
                             }
                         },
-                        match self.get_profile_by_id(following).await {
+                        match self.get_profile_by_id(following.clone()).await {
                             Ok(ua) => ua,
                             Err(e) => {
                                 println!("({}) UID 'following' {}", e.to_string(), following);
@@ -1108,7 +1108,7 @@ impl Database {
                             user: user.clone(),
                             following: following.clone(),
                         },
-                        match self.get_profile_by_id(user).await {
+                        match self.get_profile_by_id(user.clone()).await {
                             Ok(ua) => ua,
                             Err(e) => {
                                 println!("({}) UID 'user' {}", e.to_string(), user);
@@ -1116,7 +1116,7 @@ impl Database {
                                 continue;
                             }
                         },
-                        match self.get_profile_by_id(following).await {
+                        match self.get_profile_by_id(following.clone()).await {
                             Ok(ua) => ua,
                             Err(e) => {
                                 println!("({}) UID 'following' {}", e.to_string(), following);
