@@ -953,11 +953,19 @@ impl Database {
                         },
                         match self.get_profile_by_id(user).await {
                             Ok(ua) => ua,
-                            Err(_) => continue,
+                            Err(e) => {
+                                println!("({}) UID 'user' {}", e.to_string(), user);
+
+                                continue;
+                            }
                         },
                         match self.get_profile_by_id(following).await {
                             Ok(ua) => ua,
-                            Err(_) => continue,
+                            Err(e) => {
+                                println!("({}) UID 'following' {}", e.to_string(), following);
+
+                                continue;
+                            }
                         },
                     ))
                 }
@@ -1034,11 +1042,19 @@ impl Database {
                         },
                         match self.get_profile_by_id(user).await {
                             Ok(ua) => ua,
-                            Err(e) => return Err(e),
+                            Err(e) => {
+                                println!("({}) UID 'user' {}", e.to_string(), user);
+
+                                continue;
+                            }
                         },
                         match self.get_profile_by_id(following).await {
                             Ok(ua) => ua,
-                            Err(e) => return Err(e),
+                            Err(e) => {
+                                println!("({}) UID 'following' {}", e.to_string(), following);
+
+                                continue;
+                            }
                         },
                     ))
                 }
@@ -1094,11 +1110,19 @@ impl Database {
                         },
                         match self.get_profile_by_id(user).await {
                             Ok(ua) => ua,
-                            Err(_) => continue,
+                            Err(e) => {
+                                println!("({}) UID 'user' {}", e.to_string(), user);
+
+                                continue;
+                            }
                         },
                         match self.get_profile_by_id(following).await {
                             Ok(ua) => ua,
-                            Err(_) => continue,
+                            Err(e) => {
+                                println!("({}) UID 'following' {}", e.to_string(), following);
+
+                                continue;
+                            }
                         },
                     ))
                 }
