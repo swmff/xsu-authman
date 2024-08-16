@@ -466,12 +466,49 @@ impl Database {
     pub async fn edit_profile_metadata_by_name(
         &self,
         name: String,
-        metadata: ProfileMetadata,
+        mut metadata: ProfileMetadata,
     ) -> Result<()> {
         // make sure user exists
         if let Err(e) = self.get_profile_by_username(name.clone()).await {
             return Err(e);
         };
+
+        // check metadata kv
+        let allowed_custom_keys = &[
+            "sparkler:display_name",
+            "sparkler:biography",
+            "sparkler:avatar_url",
+            "sparkler:banner_url",
+            "sparkler:website_theme",
+            "sparkler:allow_profile_themes",
+            "sparkler:motivational_header",
+            "sparkler:anonymous_username",
+            "sparkler:anonymous_avatar",
+            "sparkler:pinned",
+            "sparkler:profile_theme",
+            "sparkler:color_surface",
+            "sparkler:color_lowered",
+            "sparkler:color_super_lowered",
+            "sparkler:color_raised",
+            "sparkler:color_super_raised",
+            "sparkler:color_text",
+            "sparkler:color_text_raised",
+            "sparkler:color_text_lowered",
+            "sparkler:color_link",
+            "sparkler:color_primary",
+            "sparkler:color_primary_lowered",
+            "sparkler:color_text_primary",
+            "sparkler:lock_profile",
+            "sparkler:disallow_anonymous",
+            "sparkler:require_account",
+            "sparkler:block_list",
+        ];
+
+        for kv in metadata.kv.clone() {
+            if !allowed_custom_keys.contains(&kv.0.as_str()) {
+                metadata.kv.remove(&kv.0);
+            }
+        }
 
         // update user
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
