@@ -1,4 +1,4 @@
-use crate::model::{AuthError, Profile, ProfileCreate, ProfileMetadata};
+use crate::model::{AuthError, Profile, ProfileCreate, ProfileMetadata, Warning, WarningCreate};
 use crate::model::{Group, Notification, NotificationCreate, Permission, UserFollow};
 
 use hcaptcha::Hcaptcha;
@@ -134,6 +134,18 @@ impl Database {
                 timestamp TEXT,
                 id        TEXT,
                 recipient TEXT
+            )",
+        )
+        .execute(c)
+        .await;
+
+        let _ = sqlquery(
+            "CREATE TABLE IF NOT EXISTS \"xwarnings\" (
+                id        TEXT,
+                content   TEXT,
+                timestamp TEXT,
+                recipient TEXT,
+                moderator TEXT
             )",
         )
         .execute(c)
@@ -682,6 +694,17 @@ impl Database {
                         "DELETE FROM \"xnotifications\" WHERE \"recipient\" = ?"
                     } else {
                         "DELETE FROM \"xnotifications\" WHERE \"recipient\" = $1"
+                    };
+
+                if let Err(_) = sqlquery(query).bind::<&String>(&id).execute(c).await {
+                    return Err(AuthError::Other);
+                };
+
+                let query: &str =
+                    if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
+                        "DELETE FROM \"xwarnings\" WHERE \"recipient\" = ?"
+                    } else {
+                        "DELETE FROM \"xwarnings\" WHERE \"recipient\" = $1"
                     };
 
                 if let Err(_) = sqlquery(query).bind::<&String>(&id).execute(c).await {
@@ -1699,6 +1722,250 @@ impl Database {
                         .remove(format!("xsulib.authman.notification:{}", notification.id))
                         .await;
                 }
+
+                // return
+                return Ok(());
+            }
+            Err(_) => return Err(AuthError::Other),
+        };
+    }
+
+    // notifications
+
+    // GET
+    /// Get an existing warning
+    ///
+    /// ## Arguments:
+    /// * `id`
+    pub async fn get_warning(&self, id: String) -> Result<Warning> {
+        // check in cache
+        match self
+            .base
+            .cachedb
+            .get(format!("xsulib.authman.notification:{}", id))
+            .await
+        {
+            Some(c) => return Ok(serde_json::from_str::<Warning>(c.as_str()).unwrap()),
+            None => (),
+        };
+
+        // pull from database
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "SELECT * FROM \"xwarnings\" WHERE \"id\" = ?"
+        } else {
+            "SELECT * FROM \"xwarnings\" WHERE \"id\" = $1"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        let res = match sqlquery(&query).bind::<&String>(&id).fetch_one(c).await {
+            Ok(p) => self.base.textify_row(p, Vec::new()).0,
+            Err(_) => return Err(AuthError::NotFound),
+        };
+
+        // return
+        let warning = Warning {
+            id: res.get("id").unwrap().to_string(),
+            content: res.get("content").unwrap().to_string(),
+            timestamp: res.get("timestamp").unwrap().parse::<u128>().unwrap(),
+            recipient: res.get("recipient").unwrap().to_string(),
+            moderator: match self
+                .get_profile_by_id(res.get("moderator").unwrap().to_string())
+                .await
+            {
+                Ok(ua) => ua,
+                Err(e) => return Err(e),
+            },
+        };
+
+        // store in cache
+        self.base
+            .cachedb
+            .set(
+                format!("xsulib.authman.warning:{}", id),
+                serde_json::to_string::<Warning>(&warning).unwrap(),
+            )
+            .await;
+
+        // return
+        Ok(warning)
+    }
+
+    /// Get all warnings by their recipient
+    ///
+    /// ## Arguments:
+    /// * `recipient`
+    /// * `user` - the user doing this
+    pub async fn get_warnings_by_recipient(
+        &self,
+        recipient: String,
+        user: Profile,
+    ) -> Result<Vec<Warning>> {
+        // make sure user is a manager
+        let group = match self.get_group_by_id(user.group).await {
+            Ok(g) => g,
+            Err(_) => return Err(AuthError::Other),
+        };
+
+        if !group.permissions.contains(&Permission::Manager) {
+            return Err(AuthError::NotAllowed);
+        }
+
+        // pull from database
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "SELECT * FROM \"xwarnings\" WHERE \"recipient\" = ? ORDER BY \"timestamp\" DESC"
+        } else {
+            "SELECT * FROM \"xwarnings\" WHERE \"recipient\" = $1 ORDER BY \"timestamp\" DESC"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        let res = match sqlquery(&query)
+            .bind::<&String>(&recipient.to_lowercase())
+            .fetch_all(c)
+            .await
+        {
+            Ok(p) => {
+                let mut out: Vec<Warning> = Vec::new();
+
+                for row in p {
+                    let res = self.base.textify_row(row, Vec::new()).0;
+                    out.push(Warning {
+                        id: res.get("id").unwrap().to_string(),
+                        content: res.get("content").unwrap().to_string(),
+                        timestamp: res.get("timestamp").unwrap().parse::<u128>().unwrap(),
+                        recipient: res.get("recipient").unwrap().to_string(),
+                        moderator: match self
+                            .get_profile_by_id(res.get("moderator").unwrap().to_string())
+                            .await
+                        {
+                            Ok(ua) => ua,
+                            Err(_) => continue,
+                        },
+                    });
+                }
+
+                out
+            }
+            Err(_) => return Err(AuthError::NotFound),
+        };
+
+        // return
+        Ok(res)
+    }
+
+    // SET
+    /// Create a new warning
+    ///
+    /// ## Arguments:
+    /// * `props` - [`WarningCreate`]
+    /// * `user` - the user creating this warning
+    pub async fn create_warning(&self, props: WarningCreate, user: Profile) -> Result<()> {
+        // make sure user is a manager
+        let group = match self.get_group_by_id(user.group).await {
+            Ok(g) => g,
+            Err(_) => return Err(AuthError::Other),
+        };
+
+        if !group.permissions.contains(&Permission::Manager) {
+            return Err(AuthError::NotAllowed);
+        }
+
+        // ...
+        let warning = Warning {
+            id: utility::random_id(),
+            content: props.content,
+            timestamp: utility::unix_epoch_timestamp(),
+            recipient: props.recipient,
+            moderator: user,
+        };
+
+        // create notification
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "INSERT INTO \"xwarnings\" VALUES (?, ?, ?, ?, ?)"
+        } else {
+            "INSERT INTO \"xwarnings\" VALEUS ($1, $2, $3, $4, $5)"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        match sqlquery(&query)
+            .bind::<&String>(&warning.id)
+            .bind::<&String>(&warning.content)
+            .bind::<&String>(&warning.timestamp.to_string())
+            .bind::<&String>(&warning.recipient)
+            .bind::<&String>(&warning.moderator.id)
+            .execute(c)
+            .await
+        {
+            Ok(_) => {
+                // create notification for recipient
+                if let Err(e) = self
+                    .create_notification(NotificationCreate {
+                        title: "You have received an account warning!".to_string(),
+                        content: warning.content,
+                        address: String::new(),
+                        recipient: warning.recipient,
+                    })
+                    .await
+                {
+                    return Err(e);
+                };
+
+                // ...
+                return Ok(());
+            }
+            Err(_) => return Err(AuthError::Other),
+        };
+    }
+
+    /// Delete an existing warning
+    ///
+    /// Warnings can only be deleted by their moderator or admins.
+    ///
+    /// ## Arguments:
+    /// * `id` - the ID of the warning
+    /// * `user` - the user doing this
+    pub async fn delete_warning(&self, id: String, user: Profile) -> Result<()> {
+        // make sure warning exists
+        let warning = match self.get_warning(id.clone()).await {
+            Ok(n) => n,
+            Err(e) => return Err(e),
+        };
+
+        // check id
+        if user.id != warning.moderator.id {
+            // check permission
+            let group = match self.get_group_by_id(user.group).await {
+                Ok(g) => g,
+                Err(_) => return Err(AuthError::Other),
+            };
+
+            if !group.permissions.contains(&Permission::Admin) {
+                return Err(AuthError::NotAllowed);
+            }
+        }
+
+        // delete warning
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "DELETE FROM \"xwarnings\" WHERE \"id\" = ?"
+        } else {
+            "DELETE FROM \"xwarnings\" WHERE \"id\" = $1"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        match sqlquery(&query).bind::<&String>(&id).execute(c).await {
+            Ok(_) => {
+                // remove from cache
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.warning:{}", id))
+                    .await;
 
                 // return
                 return Ok(());

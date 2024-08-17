@@ -1,6 +1,6 @@
 [package]
 name = "xsu-authman"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 description = "Authentication manager"
 authors = ["trisuaso", "swmff"]
@@ -12,7 +12,7 @@ license = "MIT"
 postgres = ["xsu-dataman/postgres"]
 mysql = ["xsu-dataman/mysql"]
 sqlite = ["xsu-dataman/sqlite"]
-# default = ["xsu-dataman/sqlite"] # for development
+default = ["xsu-dataman/sqlite"] # for development
 
 [dependencies]
 axum = { version = "0.7.5", features = ["macros"] }

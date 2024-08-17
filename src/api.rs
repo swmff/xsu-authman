@@ -2,7 +2,7 @@
 use crate::database::Database;
 use crate::model::{
     AuthError, Permission, ProfileCreate, ProfileLogin, SetProfileGroup, SetProfileMetadata,
-    SetProfilePassword,
+    SetProfilePassword, WarningCreate,
 };
 use axum::body::Bytes;
 use axum::http::HeaderMap;
@@ -33,6 +33,9 @@ pub fn routes(database: Database) -> Router {
             "/notifications/clear",
             delete(delete_all_notifications_request),
         )
+        // warnings
+        .route("/warnings", post(create_warning_request))
+        .route("/warnings/:id", delete(delete_warning_request))
         // me
         .route("/me/delete", post(delete_me_request))
         .route("/me", get(me_request))
@@ -884,6 +887,96 @@ pub async fn delete_other_request(
 
     // return
     match database.delete_profile_by_id(id).await {
+        Ok(_) => Json(DefaultReturn {
+            success: true,
+            message: "Acceptable".to_string(),
+            payload: (),
+        }),
+        Err(e) => Json(DefaultReturn {
+            success: false,
+            message: e.to_string(),
+            payload: (),
+        }),
+    }
+}
+
+/// Create a warning
+pub async fn create_warning_request(
+    jar: CookieJar,
+    State(database): State<Database>,
+    Json(props): Json<WarningCreate>,
+) -> impl IntoResponse {
+    // get user from token
+    let auth_user = match jar.get("__Secure-Token") {
+        Some(c) => match database
+            .get_profile_by_unhashed(c.value_trimmed().to_string())
+            .await
+        {
+            Ok(ua) => ua,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: (),
+                });
+            }
+        },
+        None => {
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            });
+        }
+    };
+
+    // return
+    match database.create_warning(props, auth_user).await {
+        Ok(_) => Json(DefaultReturn {
+            success: true,
+            message: "Acceptable".to_string(),
+            payload: (),
+        }),
+        Err(e) => Json(DefaultReturn {
+            success: false,
+            message: e.to_string(),
+            payload: (),
+        }),
+    }
+}
+
+/// Delete a warning
+pub async fn delete_warning_request(
+    jar: CookieJar,
+    Path(id): Path<String>,
+    State(database): State<Database>,
+) -> impl IntoResponse {
+    // get user from token
+    let auth_user = match jar.get("__Secure-Token") {
+        Some(c) => match database
+            .get_profile_by_unhashed(c.value_trimmed().to_string())
+            .await
+        {
+            Ok(ua) => ua,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: (),
+                });
+            }
+        },
+        None => {
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            });
+        }
+    };
+
+    // return
+    match database.delete_warning(id, auth_user).await {
         Ok(_) => Json(DefaultReturn {
             success: true,
             message: "Acceptable".to_string(),

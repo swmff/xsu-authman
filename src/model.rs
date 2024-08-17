@@ -96,6 +96,21 @@ pub struct Notification {
     pub recipient: String,
 }
 
+/// Basic warning structure
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Warning {
+    /// The ID of the warning
+    pub id: String,
+    /// The content of the warning
+    pub content: String,
+    /// The timestamp of when the warning was created
+    pub timestamp: u128,
+    /// The recipient of the warning
+    pub recipient: String,
+    /// The moderator who warned the recipient
+    pub moderator: Profile,
+}
+
 /// xsu system permission
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum Permission {
@@ -161,6 +176,12 @@ pub struct NotificationCreate {
     pub title: String,
     pub content: String,
     pub address: String,
+    pub recipient: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WarningCreate {
+    pub content: String,
     pub recipient: String,
 }
 
