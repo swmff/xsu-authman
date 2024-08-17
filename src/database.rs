@@ -469,8 +469,9 @@ impl Database {
         mut metadata: ProfileMetadata,
     ) -> Result<()> {
         // make sure user exists
-        if let Err(e) = self.get_profile_by_username(name.clone()).await {
-            return Err(e);
+        let profile = match self.get_profile_by_username(name.clone()).await {
+            Ok(ua) => ua,
+            Err(e) => return Err(e),
         };
 
         // check metadata kv
@@ -482,6 +483,7 @@ impl Database {
             "sparkler:website_theme",
             "sparkler:allow_profile_themes",
             "sparkler:motivational_header",
+            "sparkler:warning",
             "sparkler:anonymous_username",
             "sparkler:anonymous_avatar",
             "sparkler:pinned",
@@ -530,6 +532,12 @@ impl Database {
                     .cachedb
                     .remove(format!("xsulib.authman.profile:{}", name))
                     .await;
+
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.profile:{}", profile.id))
+                    .await;
+
                 Ok(())
             }
             Err(_) => Err(AuthError::Other),
