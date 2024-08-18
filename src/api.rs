@@ -433,7 +433,8 @@ pub async fn profile_inspect_request(
     };
 
     // edit profile
-    auth_user.id = String::new();
+    auth_user.salt = String::new();
+    auth_user.password = String::new();
     auth_user.tokens = Vec::new();
 
     // return
