@@ -516,6 +516,7 @@ impl Database {
             "sparkler:lock_profile",
             "sparkler:disallow_anonymous",
             "sparkler:require_account",
+            "sparkler:private_social",
             "sparkler:block_list",
         ];
 
