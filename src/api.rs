@@ -37,6 +37,7 @@ pub fn routes(database: Database) -> Router {
         .route("/warnings", post(create_warning_request))
         .route("/warnings/:id", delete(delete_warning_request))
         // me
+        .route("/me/tokens", post(update_my_tokens_request))
         .route("/me/delete", post(delete_me_request))
         .route("/me", get(me_request))
         // account
@@ -382,6 +383,60 @@ pub async fn delete_me_request(
     Json(DefaultReturn {
         success: true,
         message: "Profile deleted, goodbye!".to_string(),
+        payload: (),
+    })
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct UpdateTokens {
+    tokens: Vec<String>,
+}
+
+/// Update the current user's session tokens
+pub async fn update_my_tokens_request(
+    jar: CookieJar,
+    State(database): State<Database>,
+    Json(req): Json<UpdateTokens>,
+) -> impl IntoResponse {
+    // get user from token
+    let auth_user = match jar.get("__Secure-Token") {
+        Some(c) => match database
+            .get_profile_by_unhashed(c.value_trimmed().to_string())
+            .await
+        {
+            Ok(ua) => ua,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: (),
+                });
+            }
+        },
+        None => {
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            });
+        }
+    };
+
+    // return
+    if let Err(e) = database
+        .edit_profile_tokens_by_name(auth_user.username, req.tokens)
+        .await
+    {
+        return Json(DefaultReturn {
+            success: false,
+            message: e.to_string(),
+            payload: (),
+        });
+    }
+
+    Json(DefaultReturn {
+        success: true,
+        message: "Tokens updated!".to_string(),
         payload: (),
     })
 }
