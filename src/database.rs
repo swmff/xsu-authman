@@ -512,6 +512,7 @@ impl Database {
             "sparkler:color_primary",
             "sparkler:color_primary_lowered",
             "sparkler:color_text_primary",
+            "sparkler:color_shadow",
             "sparkler:lock_profile",
             "sparkler:disallow_anonymous",
             "sparkler:require_account",
