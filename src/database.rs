@@ -34,6 +34,8 @@ impl Default for HCaptchaConfig {
 
 #[derive(Clone, Debug)]
 pub struct ServerOptions {
+    /// If new registrations are enabled
+    pub registration_enabled: bool,
     /// HCaptcha configuration
     pub captcha: HCaptchaConfig,
 }
@@ -41,6 +43,7 @@ pub struct ServerOptions {
 impl Default for ServerOptions {
     fn default() -> Self {
         Self {
+            registration_enabled: true,
             captcha: HCaptchaConfig::default(),
         }
     }
@@ -403,6 +406,11 @@ impl Database {
     /// * `password`
     /// * `token` - hcaptcha token
     pub async fn create_profile(&self, props: ProfileCreate) -> Result<String> {
+        if self.config.registration_enabled == false {
+            return Err(AuthError::NotAllowed);
+        }
+
+        // ...
         let username = props.username.clone();
         let password = props.password.clone();
 
@@ -791,6 +799,29 @@ impl Database {
                     .cachedb
                     .remove(format!("xsulib.sparkler.global_question_count:{}", id))
                     .await;
+
+                // circles by user
+                let query: &str =
+                    if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
+                        "DELETE FROM \"xcircles\" WHERE \"owner\" = ?"
+                    } else {
+                        "DELETE FROM \"xcircles\" WHERE \"owner\" = $1"
+                    };
+
+                if let Err(_) = sqlquery(query).bind::<&String>(&id).execute(c).await {
+                    return Err(AuthError::Other);
+                };
+
+                let query: &str =
+                    if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
+                        "DELETE FROM \"xcircle_memberships\" WHERE \"user\" = ?"
+                    } else {
+                        "DELETE FROM \"xcircle_memberships\" WHERE \"user\" = $1"
+                    };
+
+                if let Err(_) = sqlquery(query).bind::<&String>(&id).execute(c).await {
+                    return Err(AuthError::Other);
+                };
 
                 // ...
                 self.base
