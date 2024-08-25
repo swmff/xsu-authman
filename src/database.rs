@@ -482,22 +482,11 @@ impl Database {
         }
     }
 
-    /// Update a [`Profile`]'s metadata by its `username`
-    pub async fn edit_profile_metadata_by_name(
-        &self,
-        name: String,
-        mut metadata: ProfileMetadata,
-    ) -> Result<()> {
-        // make sure user exists
-        let profile = match self.get_profile_by_username(name.clone()).await {
-            Ok(ua) => ua,
-            Err(e) => return Err(e),
-        };
-
-        // check metadata kv
-        let allowed_custom_keys = &[
+    pub fn allowed_custom_keys(&self) -> Vec<&'static str> {
+        vec![
             "sparkler:display_name",
             "sparkler:biography",
+            "sparkler:sidebar",
             "sparkler:avatar_url",
             "sparkler:banner_url",
             "sparkler:website_theme",
@@ -526,7 +515,23 @@ impl Database {
             "sparkler:require_account",
             "sparkler:private_social",
             "sparkler:block_list",
-        ];
+        ]
+    }
+
+    /// Update a [`Profile`]'s metadata by its `username`
+    pub async fn edit_profile_metadata_by_name(
+        &self,
+        name: String,
+        mut metadata: ProfileMetadata,
+    ) -> Result<()> {
+        // make sure user exists
+        let profile = match self.get_profile_by_username(name.clone()).await {
+            Ok(ua) => ua,
+            Err(e) => return Err(e),
+        };
+
+        // check metadata kv
+        let allowed_custom_keys = self.allowed_custom_keys();
 
         for kv in metadata.kv.clone() {
             if !allowed_custom_keys.contains(&kv.0.as_str()) {
