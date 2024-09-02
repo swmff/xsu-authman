@@ -172,6 +172,12 @@ pub struct SetProfilePassword {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct SetProfileUsername {
+    pub password: String,
+    pub new_name: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct NotificationCreate {
     pub title: String,
     pub content: String,

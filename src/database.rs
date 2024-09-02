@@ -688,6 +688,51 @@ impl Database {
         }
     }
 
+    /// Update a [`Profile`]'s `username` by its name and password
+    pub async fn edit_profile_username_by_name(
+        &self,
+        name: String,
+        password: String,
+        new_name: String,
+    ) -> Result<()> {
+        // make sure user exists
+        let ua = match self.get_profile_by_username(name.clone()).await {
+            Ok(ua) => ua,
+            Err(e) => return Err(e),
+        };
+
+        // check password
+        let password_hashed = xsu_util::hash::hash_salted(password, ua.salt);
+
+        if password_hashed != ua.password {
+            return Err(AuthError::NotAllowed);
+        }
+
+        // update user
+        let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
+            "UPDATE \"xprofiles\" SET \"username\" = ? WHERE \"username\" = ?"
+        } else {
+            "UPDATE \"xprofiles\" SET (\"username\") = ($1) WHERE \"username\" = $2"
+        };
+
+        let c = &self.base.db.client;
+        match sqlquery(query)
+            .bind::<&String>(&new_name)
+            .bind::<&String>(&name)
+            .execute(c)
+            .await
+        {
+            Ok(_) => {
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.profile:{}", name))
+                    .await;
+                Ok(())
+            }
+            Err(_) => Err(AuthError::Other),
+        }
+    }
+
     /// Delete a profile
     ///
     /// **VALIDATION SHOULD BE DONE *BEFORE* THIS!!**

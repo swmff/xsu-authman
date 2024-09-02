@@ -2,7 +2,7 @@
 use crate::database::Database;
 use crate::model::{
     AuthError, Permission, ProfileCreate, ProfileLogin, SetProfileGroup, SetProfileMetadata,
-    SetProfilePassword, WarningCreate,
+    SetProfilePassword, SetProfileUsername, WarningCreate,
 };
 use axum::body::Bytes;
 use axum::http::HeaderMap;
@@ -23,6 +23,7 @@ pub fn routes(database: Database) -> Router {
         // profiles
         // .route("/profile/:username/group", post(set_group_request))
         .route("/profile/:username/password", post(set_password_request))
+        .route("/profile/:username/username", post(set_username_request))
         .route("/profile/:username/metadata", post(update_metdata_request))
         .route("/profile/:username/avatar", get(profile_avatar_request))
         .route("/profile/:username", delete(delete_other_request))
@@ -723,6 +724,126 @@ pub async fn set_password_request(
         success: true,
         message: "Acceptable".to_string(),
         payload: Some(props.new_password),
+    })
+}
+
+/// Change a profile's username
+pub async fn set_username_request(
+    jar: CookieJar,
+    Path(username): Path<String>,
+    State(database): State<Database>,
+    Json(props): Json<SetProfileUsername>,
+) -> impl IntoResponse {
+    // get user from token
+    let auth_user = match jar.get("__Secure-Token") {
+        Some(c) => match database
+            .get_profile_by_unhashed(c.value_trimmed().to_string())
+            .await
+        {
+            Ok(ua) => ua,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: None,
+                });
+            }
+        },
+        None => {
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: None,
+            });
+        }
+    };
+
+    // check permission
+    if auth_user.username != username {
+        let group = match database.get_group_by_id(auth_user.group).await {
+            Ok(g) => g,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: None,
+                })
+            }
+        };
+
+        if !group.permissions.contains(&Permission::Manager) {
+            // we must have the "Manager" permission to edit other users
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: None,
+            });
+        }
+
+        // get other user
+        let other_user = match database.get_profile_by_username(username.clone()).await {
+            Ok(ua) => ua,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: None,
+                });
+            }
+        };
+
+        // check permission
+        let group = match database.get_group_by_id(other_user.group).await {
+            Ok(g) => g,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: None,
+                })
+            }
+        };
+
+        if group.permissions.contains(&Permission::Manager) {
+            // we cannot manager other managers
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: None,
+            });
+        }
+    }
+
+    // check user permissions
+    // returning NotAllowed here will block them from editing their profile
+    // we don't want to waste resources on rule breakers
+    if auth_user.group == -1 {
+        // group -1 (even if it exists) is for marking users as banned
+        return Json(DefaultReturn {
+            success: false,
+            message: AuthError::NotAllowed.to_string(),
+            payload: None,
+        });
+    }
+
+    // push update
+    // TODO: try not to clone
+    if let Err(e) = database
+        .edit_profile_username_by_name(username, props.password, props.new_name.clone())
+        .await
+    {
+        return Json(DefaultReturn {
+            success: false,
+            message: e.to_string(),
+            payload: None,
+        });
+    }
+
+    // return
+    Json(DefaultReturn {
+        success: true,
+        message: "Acceptable".to_string(),
+        payload: Some(props.new_name),
     })
 }
 
