@@ -398,6 +398,37 @@ impl Database {
         Ok(user)
     }
 
+    /// Validate a username
+    pub fn validate_username(username: String) -> Result<()> {
+        let banned_usernames = &[
+            "admin",
+            "account",
+            "anonymous",
+            "login",
+            "sign_up",
+            "settings",
+        ];
+
+        let regex = regex::RegexBuilder::new(r"[^\w_\-\.!]+$")
+            .multi_line(true)
+            .build()
+            .unwrap();
+
+        if regex.captures(&username).is_some() {
+            return Err(AuthError::ValueError);
+        }
+
+        if (username.len() < 2) | (username.len() > 500) {
+            return Err(AuthError::ValueError);
+        }
+
+        if banned_usernames.contains(&username.as_str()) {
+            return Err(AuthError::ValueError);
+        }
+
+        Ok(())
+    }
+
     // SET
     /// Create a new user given their username. Returns their unhashed token
     ///
@@ -428,23 +459,8 @@ impl Database {
         };
 
         // check username
-        let banned_usernames = &["admin", "account", "anonymous", "login", "sign_up"];
-
-        let regex = regex::RegexBuilder::new(r"[^\w_\-\.!]+$")
-            .multi_line(true)
-            .build()
-            .unwrap();
-
-        if regex.captures(&username).is_some() {
-            return Err(AuthError::ValueError);
-        }
-
-        if (username.len() < 2) | (username.len() > 500) {
-            return Err(AuthError::ValueError);
-        }
-
-        if banned_usernames.contains(&username.as_str()) {
-            return Err(AuthError::ValueError);
+        if let Err(e) = Database::validate_username(username.clone()) {
+            return Err(e);
         }
 
         // ...
@@ -700,6 +716,16 @@ impl Database {
             Ok(ua) => ua,
             Err(e) => return Err(e),
         };
+
+        // make sure username isn't in use
+        if let Ok(_) = self.get_profile_by_username(new_name.clone()).await {
+            return Err(AuthError::MustBeUnique);
+        }
+
+        // check username
+        if let Err(e) = Database::validate_username(new_name.clone()) {
+            return Err(e);
+        }
 
         // check password
         let password_hashed = xsu_util::hash::hash_salted(password, ua.salt);
