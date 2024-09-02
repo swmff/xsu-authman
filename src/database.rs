@@ -594,8 +594,9 @@ impl Database {
         tokens: Vec<String>,
     ) -> Result<()> {
         // make sure user exists
-        if let Err(e) = self.get_profile_by_username(name.clone()).await {
-            return Err(e);
+        let ua = match self.get_profile_by_username(name.clone()).await {
+            Ok(ua) => ua,
+            Err(e) => return Err(e),
         };
 
         // update user
@@ -618,6 +619,12 @@ impl Database {
                     .cachedb
                     .remove(format!("xsulib.authman.profile:{}", name))
                     .await;
+
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.profile:{}", ua.id))
+                    .await;
+
                 Ok(())
             }
             Err(_) => Err(AuthError::Other),
@@ -627,8 +634,9 @@ impl Database {
     /// Update a [`Profile`]'s `gid` by its `username`
     pub async fn edit_profile_group_by_name(&self, name: String, group: i32) -> Result<()> {
         // make sure user exists
-        if let Err(e) = self.get_profile_by_username(name.clone()).await {
-            return Err(e);
+        let ua = match self.get_profile_by_username(name.clone()).await {
+            Ok(ua) => ua,
+            Err(e) => return Err(e),
         };
 
         // update user
@@ -650,6 +658,12 @@ impl Database {
                     .cachedb
                     .remove(format!("xsulib.authman.profile:{}", name))
                     .await;
+
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.profile:{}", ua.id))
+                    .await;
+
                 Ok(())
             }
             Err(_) => Err(AuthError::Other),
@@ -698,6 +712,12 @@ impl Database {
                     .cachedb
                     .remove(format!("xsulib.authman.profile:{}", name))
                     .await;
+
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.profile:{}", ua.id))
+                    .await;
+
                 Ok(())
             }
             Err(_) => Err(AuthError::Other),
@@ -753,6 +773,12 @@ impl Database {
                     .cachedb
                     .remove(format!("xsulib.authman.profile:{}", name))
                     .await;
+
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.profile:{}", ua.id))
+                    .await;
+
                 Ok(())
             }
             Err(_) => Err(AuthError::Other),
