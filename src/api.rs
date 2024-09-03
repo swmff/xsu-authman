@@ -639,6 +639,7 @@ pub async fn set_password_request(
     };
 
     // check permission
+    let mut is_manager = false;
     if auth_user.username != username {
         let group = match database.get_group_by_id(auth_user.group).await {
             Ok(g) => g,
@@ -658,6 +659,8 @@ pub async fn set_password_request(
                 message: AuthError::NotAllowed.to_string(),
                 payload: None,
             });
+        } else {
+            is_manager = true;
         }
 
         // get other user
@@ -709,7 +712,12 @@ pub async fn set_password_request(
     // push update
     // TODO: try not to clone
     if let Err(e) = database
-        .edit_profile_password_by_name(username, props.password, props.new_password.clone())
+        .edit_profile_password_by_name(
+            username,
+            props.password,
+            props.new_password.clone(),
+            is_manager == false,
+        )
         .await
     {
         return Json(DefaultReturn {

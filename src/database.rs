@@ -676,6 +676,7 @@ impl Database {
         name: String,
         password: String,
         new_password: String,
+        do_password_check: bool,
     ) -> Result<()> {
         // make sure user exists
         let ua = match self.get_profile_by_username(name.clone()).await {
@@ -684,10 +685,12 @@ impl Database {
         };
 
         // check password
-        let password_hashed = xsu_util::hash::hash_salted(password, ua.salt);
+        if do_password_check {
+            let password_hashed = xsu_util::hash::hash_salted(password, ua.salt);
 
-        if password_hashed != ua.password {
-            return Err(AuthError::NotAllowed);
+            if password_hashed != ua.password {
+                return Err(AuthError::NotAllowed);
+            }
         }
 
         // update user
