@@ -114,10 +114,12 @@ pub struct Warning {
 /// xsu system permission
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum Permission {
-    /// Permission to manage the server through the Sproc UI
+    /// Permission to manage the server and managers
     Admin,
-    /// Permission to manage other users
+    /// Permission to manage the server and assets
     Manager,
+    /// Permission to create warnings and do small moderator tasks
+    Helper,
 }
 
 /// Basic permission group

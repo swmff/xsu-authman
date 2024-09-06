@@ -1946,7 +1946,7 @@ impl Database {
             Err(_) => return Err(AuthError::Other),
         };
 
-        if !group.permissions.contains(&Permission::Manager) {
+        if !group.permissions.contains(&Permission::Helper) {
             return Err(AuthError::NotAllowed);
         }
 
@@ -2007,7 +2007,7 @@ impl Database {
             Err(_) => return Err(AuthError::Other),
         };
 
-        if !group.permissions.contains(&Permission::Manager) {
+        if !group.permissions.contains(&Permission::Helper) {
             return Err(AuthError::NotAllowed);
         }
 
@@ -2082,7 +2082,7 @@ impl Database {
                 Err(_) => return Err(AuthError::Other),
             };
 
-            if !group.permissions.contains(&Permission::Admin) {
+            if !group.permissions.contains(&Permission::Manager) {
                 return Err(AuthError::NotAllowed);
             }
         }
