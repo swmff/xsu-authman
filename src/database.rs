@@ -534,6 +534,7 @@ impl Database {
             "sparkler:require_account",
             "sparkler:private_social",
             "sparkler:block_list",
+            "sparkler:filter",
         ]
     }
 
