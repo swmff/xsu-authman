@@ -1,11 +1,11 @@
 //! Responds to API requests
 use crate::database::Database;
 use crate::model::{
-    AuthError, Permission, ProfileCreate, ProfileLogin, SetProfileGroup, SetProfileMetadata,
-    SetProfilePassword, SetProfileUsername, WarningCreate,
+    AuthError, IpBanCreate, Permission, ProfileCreate, ProfileLogin, SetProfileGroup,
+    SetProfileMetadata, SetProfilePassword, SetProfileUsername, WarningCreate,
 };
 use axum::body::Bytes;
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, HeaderValue};
 use hcaptcha::Hcaptcha;
 use serde::{Deserialize, Serialize};
 use xsu_dataman::DefaultReturn;
@@ -37,6 +37,9 @@ pub fn routes(database: Database) -> Router {
         // warnings
         .route("/warnings", post(create_warning_request))
         .route("/warnings/:id", delete(delete_warning_request))
+        // ipbans
+        .route("/ipbans", post(create_ipban_request))
+        .route("/ipbans/:id", delete(delete_ipban_request))
         // me
         .route("/me/tokens", post(update_my_tokens_request))
         .route("/me/delete", post(delete_me_request))
@@ -53,6 +56,7 @@ pub fn routes(database: Database) -> Router {
 /// [`Database::create_profile`]
 pub async fn create_profile_request(
     jar: CookieJar,
+    headers: HeaderMap,
     State(database): State<Database>,
     Json(props): Json<ProfileCreate>,
 ) -> impl IntoResponse {
@@ -68,7 +72,33 @@ pub async fn create_profile_request(
         );
     }
 
-    let res = match database.create_profile(props).await {
+    // get real ip
+    let real_ip = if let Some(ref real_ip_header) = database.config.real_ip_header {
+        headers
+            .get(real_ip_header.to_owned())
+            .unwrap_or(&HeaderValue::from_static(""))
+            .to_str()
+            .unwrap_or("")
+            .to_string()
+    } else {
+        String::new()
+    };
+
+    // check ip
+    if database.get_ipban_by_ip(real_ip.clone()).await.is_ok() {
+        return (
+            HeaderMap::new(),
+            serde_json::to_string(&DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            })
+            .unwrap(),
+        );
+    }
+
+    // create profile
+    let res = match database.create_profile(props, real_ip).await {
         Ok(r) => r,
         Err(e) => {
             return (
@@ -110,6 +140,7 @@ pub async fn create_profile_request(
 
 /// [`Database::get_profile_by_username_password`]
 pub async fn login_request(
+    headers: HeaderMap,
     State(database): State<Database>,
     Json(props): Json<ProfileLogin>,
 ) -> impl IntoResponse {
@@ -163,13 +194,40 @@ pub async fn login_request(
         );
     }
 
+    // get real ip
+    let real_ip = if let Some(ref real_ip_header) = database.config.real_ip_header {
+        headers
+            .get(real_ip_header.to_owned())
+            .unwrap_or(&HeaderValue::from_static(""))
+            .to_str()
+            .unwrap_or("")
+            .to_string()
+    } else {
+        String::new()
+    };
+
+    // check ip
+    if database.get_ipban_by_ip(real_ip.clone()).await.is_ok() {
+        return (
+            HeaderMap::new(),
+            serde_json::to_string(&DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            })
+            .unwrap(),
+        );
+    }
+
     // ...
     let token = xsu_dataman::utility::uuid();
     let token_hashed = xsu_dataman::utility::hash(token.clone());
 
     ua.tokens.push(token_hashed);
+    ua.ips.push(real_ip);
+
     database
-        .edit_profile_tokens_by_name(props.username.clone(), ua.tokens)
+        .edit_profile_tokens_by_name(props.username.clone(), ua.tokens, ua.ips)
         .await
         .unwrap();
 
@@ -400,7 +458,7 @@ pub async fn update_my_tokens_request(
     Json(req): Json<UpdateTokens>,
 ) -> impl IntoResponse {
     // get user from token
-    let auth_user = match jar.get("__Secure-Token") {
+    let mut auth_user = match jar.get("__Secure-Token") {
         Some(c) => match database
             .get_profile_by_unhashed(c.value_trimmed().to_string())
             .await
@@ -423,9 +481,26 @@ pub async fn update_my_tokens_request(
         }
     };
 
+    // edit ips
+    let mut removed_indexes = Vec::new();
+
+    for (i, token) in auth_user.tokens.iter().enumerate() {
+        if !req.tokens.contains(token) {
+            removed_indexes.push(i);
+        }
+    }
+
+    for i in removed_indexes {
+        if (auth_user.ips.len() < i) | (auth_user.ips.len() == 0) {
+            break;
+        }
+
+        auth_user.ips.remove(i);
+    }
+
     // return
     if let Err(e) = database
-        .edit_profile_tokens_by_name(auth_user.username, req.tokens)
+        .edit_profile_tokens_by_name(auth_user.username, req.tokens, auth_user.ips)
         .await
     {
         return Json(DefaultReturn {
@@ -1162,6 +1237,96 @@ pub async fn delete_warning_request(
 
     // return
     match database.delete_warning(id, auth_user).await {
+        Ok(_) => Json(DefaultReturn {
+            success: true,
+            message: "Acceptable".to_string(),
+            payload: (),
+        }),
+        Err(e) => Json(DefaultReturn {
+            success: false,
+            message: e.to_string(),
+            payload: (),
+        }),
+    }
+}
+
+/// Create a ipban
+pub async fn create_ipban_request(
+    jar: CookieJar,
+    State(database): State<Database>,
+    Json(props): Json<IpBanCreate>,
+) -> impl IntoResponse {
+    // get user from token
+    let auth_user = match jar.get("__Secure-Token") {
+        Some(c) => match database
+            .get_profile_by_unhashed(c.value_trimmed().to_string())
+            .await
+        {
+            Ok(ua) => ua,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: (),
+                });
+            }
+        },
+        None => {
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            });
+        }
+    };
+
+    // return
+    match database.create_ipban(props, auth_user).await {
+        Ok(_) => Json(DefaultReturn {
+            success: true,
+            message: "Acceptable".to_string(),
+            payload: (),
+        }),
+        Err(e) => Json(DefaultReturn {
+            success: false,
+            message: e.to_string(),
+            payload: (),
+        }),
+    }
+}
+
+/// Delete an ipban
+pub async fn delete_ipban_request(
+    jar: CookieJar,
+    Path(id): Path<String>,
+    State(database): State<Database>,
+) -> impl IntoResponse {
+    // get user from token
+    let auth_user = match jar.get("__Secure-Token") {
+        Some(c) => match database
+            .get_profile_by_unhashed(c.value_trimmed().to_string())
+            .await
+        {
+            Ok(ua) => ua,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: (),
+                });
+            }
+        },
+        None => {
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            });
+        }
+    };
+
+    // return
+    match database.delete_ipban(id, auth_user).await {
         Ok(_) => Json(DefaultReturn {
             success: true,
             message: "Acceptable".to_string(),

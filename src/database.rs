@@ -1,4 +1,6 @@
-use crate::model::{AuthError, Profile, ProfileCreate, ProfileMetadata, Warning, WarningCreate};
+use crate::model::{
+    AuthError, IpBan, IpBanCreate, Profile, ProfileCreate, ProfileMetadata, Warning, WarningCreate,
+};
 use crate::model::{Group, Notification, NotificationCreate, Permission, UserFollow};
 
 use hcaptcha::Hcaptcha;
@@ -38,6 +40,8 @@ pub struct ServerOptions {
     pub registration_enabled: bool,
     /// HCaptcha configuration
     pub captcha: HCaptchaConfig,
+    /// The header to read user IP from
+    pub real_ip_header: Option<String>,
 }
 
 impl Default for ServerOptions {
@@ -45,6 +49,7 @@ impl Default for ServerOptions {
         Self {
             registration_enabled: true,
             captcha: HCaptchaConfig::default(),
+            real_ip_header: Option::None,
         }
     }
 }
@@ -104,7 +109,8 @@ impl Database {
                 metadata TEXT,
                 joined   TEXT,
                 gid      TEXT,
-                salt     TEXT
+                salt     TEXT,
+                ips      TEXT
             )",
         )
         .execute(c)
@@ -153,6 +159,18 @@ impl Database {
         )
         .execute(c)
         .await;
+
+        let _ = sqlquery(
+            "CREATE TABLE IF NOT EXISTS \"xbans\" (
+                id        TEXT,
+                ip        TEXT,
+                reason    TEXT,
+                moderator TEXT,
+                timestamp TEXT
+            )",
+        )
+        .execute(c)
+        .await;
     }
 
     // profiles
@@ -187,6 +205,10 @@ impl Database {
             password: row.get("password").unwrap().to_string(),
             salt: row.get("salt").unwrap_or(&"".to_string()).to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
+            ips: match serde_json::from_str(row.get("ips").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
             },
@@ -244,6 +266,10 @@ impl Database {
             password: row.get("password").unwrap().to_string(),
             salt: row.get("salt").unwrap_or(&"".to_string()).to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
+            ips: match serde_json::from_str(row.get("ips").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
             },
@@ -306,6 +332,10 @@ impl Database {
             password: row.get("password").unwrap().to_string(),
             salt: row.get("salt").unwrap_or(&"".to_string()).to_string(),
             tokens: match serde_json::from_str(row.get("tokens").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
+            ips: match serde_json::from_str(row.get("ips").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
             },
@@ -378,6 +408,10 @@ impl Database {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
             },
+            ips: match serde_json::from_str(row.get("ips").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
             metadata: match serde_json::from_str(row.get("metadata").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
@@ -434,9 +468,8 @@ impl Database {
     ///
     /// # Arguments:
     /// * `username` - `String` of the user's `username`
-    /// * `password`
-    /// * `token` - hcaptcha token
-    pub async fn create_profile(&self, props: ProfileCreate) -> Result<String> {
+    /// * `user_ip` - the ip address of the user registering
+    pub async fn create_profile(&self, props: ProfileCreate, user_ip: String) -> Result<String> {
         if self.config.registration_enabled == false {
             return Err(AuthError::NotAllowed);
         }
@@ -465,9 +498,9 @@ impl Database {
 
         // ...
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
-            "INSERT INTO \"xprofiles\" VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \"xprofiles\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         } else {
-            "INSERT INTO \"xprofiles\" VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+            "INSERT INTO \"xprofiles\" VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
         };
 
         let user_token_unhashed: String = xsu_dataman::utility::uuid();
@@ -490,6 +523,7 @@ impl Database {
             .bind::<&String>(&timestamp)
             .bind::<&i32>(&0)
             .bind::<&String>(&salt)
+            .bind::<&String>(&serde_json::to_string::<Vec<String>>(&vec![user_ip]).unwrap())
             .execute(c)
             .await
         {
@@ -591,11 +625,12 @@ impl Database {
         }
     }
 
-    /// Update a [`Profile`]'s tokens by its `username`
+    /// Update a [`Profile`]'s tokens (and IPs) by its `username`
     pub async fn edit_profile_tokens_by_name(
         &self,
         name: String,
         tokens: Vec<String>,
+        ips: Vec<String>,
     ) -> Result<()> {
         // make sure user exists
         let ua = match self.get_profile_by_username(name.clone()).await {
@@ -605,15 +640,19 @@ impl Database {
 
         // update user
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
-            "UPDATE \"xprofiles\" SET \"tokens\" = ? WHERE \"username\" = ?"
+            "UPDATE \"xprofiles\" SET \"tokens\" = ?, \"ips\" = ? WHERE \"username\" = ?"
         } else {
-            "UPDATE \"xprofiles\" SET (\"tokens\") = ($1) WHERE \"username\" = $2"
+            "UPDATE \"xprofiles\" SET (\"tokens\", \"ips\") = ($1, $2) WHERE \"username\" = $3"
         };
 
         let c = &self.base.db.client;
+
         let tokens = &serde_json::to_string(&tokens).unwrap();
+        let ips = &serde_json::to_string(&ips).unwrap();
+
         match sqlquery(query)
             .bind::<&String>(tokens)
+            .bind::<&String>(ips)
             .bind::<&String>(&name)
             .execute(c)
             .await
@@ -1872,7 +1911,7 @@ impl Database {
         };
     }
 
-    // notifications
+    // warnings
 
     // GET
     /// Get an existing warning
@@ -1884,7 +1923,7 @@ impl Database {
         match self
             .base
             .cachedb
-            .get(format!("xsulib.authman.notification:{}", id))
+            .get(format!("xsulib.authman.warning:{}", id))
             .await
         {
             Some(c) => return Ok(serde_json::from_str::<Warning>(c.as_str()).unwrap()),
@@ -2107,6 +2146,271 @@ impl Database {
                 self.base
                     .cachedb
                     .remove(format!("xsulib.authman.warning:{}", id))
+                    .await;
+
+                // return
+                return Ok(());
+            }
+            Err(_) => return Err(AuthError::Other),
+        };
+    }
+
+    // warnings
+
+    // GET
+    /// Get an existing [`IpBan`]
+    ///
+    /// ## Arguments:
+    /// * `id`
+    pub async fn get_ipban(&self, id: String) -> Result<IpBan> {
+        // check in cache
+        match self
+            .base
+            .cachedb
+            .get(format!("xsulib.authman.ipban:{}", id))
+            .await
+        {
+            Some(c) => return Ok(serde_json::from_str::<IpBan>(c.as_str()).unwrap()),
+            None => (),
+        };
+
+        // pull from database
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "SELECT * FROM \"xbans\" WHERE \"id\" = ?"
+        } else {
+            "SELECT * FROM \"xbans\" WHERE \"id\" = $1"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        let res = match sqlquery(&query).bind::<&String>(&id).fetch_one(c).await {
+            Ok(p) => self.base.textify_row(p, Vec::new()).0,
+            Err(_) => return Err(AuthError::NotFound),
+        };
+
+        // return
+        let ban = IpBan {
+            id: res.get("id").unwrap().to_string(),
+            ip: res.get("ip").unwrap().to_string(),
+            reason: res.get("reason").unwrap().to_string(),
+            moderator: match self
+                .get_profile_by_id(res.get("moderator").unwrap().to_string())
+                .await
+            {
+                Ok(ua) => ua,
+                Err(e) => return Err(e),
+            },
+            timestamp: res.get("timestamp").unwrap().parse::<u128>().unwrap(),
+        };
+
+        // store in cache
+        self.base
+            .cachedb
+            .set(
+                format!("xsulib.authman.ipban:{}", id),
+                serde_json::to_string::<IpBan>(&ban).unwrap(),
+            )
+            .await;
+
+        // return
+        Ok(ban)
+    }
+
+    /// Get an existing [`IpBan`] by its IP
+    ///
+    /// ## Arguments:
+    /// * `id`
+    pub async fn get_ipban_by_ip(&self, id: String) -> Result<IpBan> {
+        // pull from database
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "SELECT * FROM \"xbans\" WHERE \"ip\" = ?"
+        } else {
+            "SELECT * FROM \"xbans\" WHERE \"ip\" = $1"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        let res = match sqlquery(&query).bind::<&String>(&id).fetch_one(c).await {
+            Ok(p) => self.base.textify_row(p, Vec::new()).0,
+            Err(_) => return Err(AuthError::NotFound),
+        };
+
+        // return
+        let ban = IpBan {
+            id: res.get("id").unwrap().to_string(),
+            ip: res.get("ip").unwrap().to_string(),
+            reason: res.get("reason").unwrap().to_string(),
+            moderator: match self
+                .get_profile_by_id(res.get("moderator").unwrap().to_string())
+                .await
+            {
+                Ok(ua) => ua,
+                Err(e) => return Err(e),
+            },
+            timestamp: res.get("timestamp").unwrap().parse::<u128>().unwrap(),
+        };
+
+        // return
+        Ok(ban)
+    }
+
+    /// Get all [`IpBan`]s
+    ///
+    /// ## Arguments:
+    /// * `user` - the user doing this
+    pub async fn get_ipbans(&self, recipient: String, user: Profile) -> Result<Vec<IpBan>> {
+        // make sure user is a manager
+        let group = match self.get_group_by_id(user.group).await {
+            Ok(g) => g,
+            Err(_) => return Err(AuthError::Other),
+        };
+
+        if !group.permissions.contains(&Permission::Helper) {
+            return Err(AuthError::NotAllowed);
+        }
+
+        // pull from database
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "SELECT * FROM \"xbans\" ORDER BY \"timestamp\" DESC"
+        } else {
+            "SELECT * FROM \"xbans\" ORDER BY \"timestamp\" DESC"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        let res = match sqlquery(&query)
+            .bind::<&String>(&recipient.to_lowercase())
+            .fetch_all(c)
+            .await
+        {
+            Ok(p) => {
+                let mut out: Vec<IpBan> = Vec::new();
+
+                for row in p {
+                    let res = self.base.textify_row(row, Vec::new()).0;
+                    out.push(IpBan {
+                        id: res.get("id").unwrap().to_string(),
+                        ip: res.get("ip").unwrap().to_string(),
+                        reason: res.get("reason").unwrap().to_string(),
+                        moderator: match self
+                            .get_profile_by_id(res.get("moderator").unwrap().to_string())
+                            .await
+                        {
+                            Ok(ua) => ua,
+                            Err(_) => continue,
+                        },
+                        timestamp: res.get("timestamp").unwrap().parse::<u128>().unwrap(),
+                    });
+                }
+
+                out
+            }
+            Err(_) => return Err(AuthError::NotFound),
+        };
+
+        // return
+        Ok(res)
+    }
+
+    // SET
+    /// Create a new [`IpBan`]
+    ///
+    /// ## Arguments:
+    /// * `props` - [`IpBanCreate`]
+    /// * `user` - the user creating this ban
+    pub async fn create_ipban(&self, props: IpBanCreate, user: Profile) -> Result<()> {
+        // make sure user is a manager
+        let group = match self.get_group_by_id(user.group).await {
+            Ok(g) => g,
+            Err(_) => return Err(AuthError::Other),
+        };
+
+        if !group.permissions.contains(&Permission::Helper) {
+            return Err(AuthError::NotAllowed);
+        }
+
+        // make sure this ip isn't already banned
+        if self.get_ipban_by_ip(props.ip.clone()).await.is_ok() {
+            return Err(AuthError::MustBeUnique);
+        }
+
+        // ...
+        let ban = IpBan {
+            id: utility::random_id(),
+            ip: props.ip,
+            reason: props.reason,
+            moderator: user,
+            timestamp: utility::unix_epoch_timestamp(),
+        };
+
+        // create notification
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "INSERT INTO \"xbans\" VALUES (?, ?, ?, ?, ?)"
+        } else {
+            "INSERT INTO \"xbans\" VALEUS ($1, $2, $3, $4, $5)"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        match sqlquery(&query)
+            .bind::<&String>(&ban.id)
+            .bind::<&String>(&ban.ip)
+            .bind::<&String>(&ban.reason)
+            .bind::<&String>(&ban.moderator.id)
+            .bind::<&String>(&ban.timestamp.to_string())
+            .execute(c)
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(_) => return Err(AuthError::Other),
+        };
+    }
+
+    /// Delete an existing IpBan
+    ///
+    /// ## Arguments:
+    /// * `id` - the ID of the ban
+    /// * `user` - the user doing this
+    pub async fn delete_ipban(&self, id: String, user: Profile) -> Result<()> {
+        // make sure warning exists
+        let warning = match self.get_ipban(id.clone()).await {
+            Ok(n) => n,
+            Err(e) => return Err(e),
+        };
+
+        // check id
+        if user.id != warning.moderator.id {
+            // check permission
+            let group = match self.get_group_by_id(user.group).await {
+                Ok(g) => g,
+                Err(_) => return Err(AuthError::Other),
+            };
+
+            if !group.permissions.contains(&Permission::Manager) {
+                return Err(AuthError::NotAllowed);
+            }
+        }
+
+        // delete ban
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            "DELETE FROM \"xbans\" WHERE \"id\" = ?"
+        } else {
+            "DELETE FROM \"xbans\" WHERE \"id\" = $1"
+        }
+        .to_string();
+
+        let c = &self.base.db.client;
+        match sqlquery(&query).bind::<&String>(&id).execute(c).await {
+            Ok(_) => {
+                // remove from cache
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.ipban:{}", id))
                     .await;
 
                 // return

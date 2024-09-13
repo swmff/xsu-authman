@@ -24,6 +24,8 @@ pub struct Profile {
     pub salt: String,
     /// User login tokens
     pub tokens: Vec<String>,
+    /// User IPs (these line up with the tokens in `tokens`)
+    pub ips: Vec<String>,
     /// Extra user information
     pub metadata: ProfileMetadata,
     /// User group
@@ -40,6 +42,7 @@ impl Default for Profile {
             password: String::new(),
             salt: String::new(),
             tokens: Vec::new(),
+            ips: Vec::new(),
             metadata: ProfileMetadata::default(),
             group: 0,
             joined: xsu_dataman::utility::unix_epoch_timestamp(),
@@ -109,6 +112,21 @@ pub struct Warning {
     pub recipient: String,
     /// The moderator who warned the recipient
     pub moderator: Profile,
+}
+
+/// Basic IP ban
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct IpBan {
+    /// The ID of the ban
+    pub id: String,
+    /// The IP that was banned
+    pub ip: String,
+    /// The reason for the ban
+    pub reason: String,
+    /// The user that banned this IP
+    pub moderator: Profile,
+    /// The timestamp of when the ban was created
+    pub timestamp: u128,
 }
 
 /// xsu system permission
@@ -191,6 +209,12 @@ pub struct NotificationCreate {
 pub struct WarningCreate {
     pub content: String,
     pub recipient: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct IpBanCreate {
+    pub ip: String,
+    pub reason: String,
 }
 
 /// General API errors
