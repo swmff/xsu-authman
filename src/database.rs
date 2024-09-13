@@ -549,6 +549,7 @@ impl Database {
             "sparkler:pinned",
             "sparkler:profile_theme",
             "sparkler:profile_skin",
+            "sparkler:layout",
             "sparkler:color_surface",
             "sparkler:color_lowered",
             "sparkler:color_super_lowered",
