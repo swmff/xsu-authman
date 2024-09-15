@@ -539,6 +539,7 @@ impl Database {
             "sparkler:sidebar",
             "sparkler:avatar_url",
             "sparkler:banner_url",
+            "sparkler:banner_fit",
             "sparkler:website_theme",
             "sparkler:website_skin",
             "sparkler:allow_profile_themes",
