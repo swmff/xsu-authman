@@ -567,6 +567,7 @@ pub async fn profile_inspect_request(
     auth_user.salt = String::new();
     auth_user.password = String::new();
     auth_user.tokens = Vec::new();
+    auth_user.ips = Vec::new();
 
     // return
     Json(DefaultReturn {
