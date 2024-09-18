@@ -28,6 +28,10 @@ pub struct Profile {
     pub ips: Vec<String>,
     /// Extra user information
     pub metadata: ProfileMetadata,
+    /// User badges
+    ///
+    /// Vec<(Text, Background, Text Color)>
+    pub badges: Vec<(String, String, String)>,
     /// User group
     pub group: i32,
     /// User join timestamp
@@ -44,6 +48,7 @@ impl Default for Profile {
             tokens: Vec::new(),
             ips: Vec::new(),
             metadata: ProfileMetadata::default(),
+            badges: Vec::new(),
             group: 0,
             joined: xsu_dataman::utility::unix_epoch_timestamp(),
         }
@@ -178,6 +183,11 @@ pub struct ProfileLogin {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SetProfileMetadata {
     pub metadata: ProfileMetadata,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SetProfileBadges {
+    pub badges: Vec<(String, String, String)>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

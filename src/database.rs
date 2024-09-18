@@ -110,7 +110,8 @@ impl Database {
                 joined   TEXT,
                 gid      TEXT,
                 salt     TEXT,
-                ips      TEXT
+                ips      TEXT,
+                badges   TEXT
             )",
         )
         .execute(c)
@@ -216,6 +217,10 @@ impl Database {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
             },
+            badges: match serde_json::from_str(row.get("badges").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
             group: row.get("gid").unwrap().parse::<i32>().unwrap_or(0),
             joined: row.get("joined").unwrap().parse::<u128>().unwrap(),
         })
@@ -274,6 +279,10 @@ impl Database {
                 Err(_) => return Err(AuthError::ValueError),
             },
             metadata: match serde_json::from_str(row.get("metadata").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
+            badges: match serde_json::from_str(row.get("badges").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
             },
@@ -340,6 +349,10 @@ impl Database {
                 Err(_) => return Err(AuthError::ValueError),
             },
             metadata: match serde_json::from_str(row.get("metadata").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
+            badges: match serde_json::from_str(row.get("badges").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
             },
@@ -413,6 +426,10 @@ impl Database {
                 Err(_) => return Err(AuthError::ValueError),
             },
             metadata: match serde_json::from_str(row.get("metadata").unwrap()) {
+                Ok(m) => m,
+                Err(_) => return Err(AuthError::ValueError),
+            },
+            badges: match serde_json::from_str(row.get("badges").unwrap()) {
                 Ok(m) => m,
                 Err(_) => return Err(AuthError::ValueError),
             },
@@ -498,9 +515,9 @@ impl Database {
 
         // ...
         let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
-            "INSERT INTO \"xprofiles\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \"xprofiles\" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         } else {
-            "INSERT INTO \"xprofiles\" VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
+            "INSERT INTO \"xprofiles\" VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
         };
 
         let user_token_unhashed: String = xsu_dataman::utility::uuid();
@@ -521,9 +538,10 @@ impl Database {
                 &serde_json::to_string::<ProfileMetadata>(&ProfileMetadata::default()).unwrap(),
             )
             .bind::<&String>(&timestamp)
-            .bind::<&i32>(&0)
+            .bind::<i32>(0)
             .bind::<&String>(&salt)
             .bind::<&String>(&serde_json::to_string::<Vec<String>>(&vec![user_ip]).unwrap())
+            .bind::<&str>("")
             .execute(c)
             .await
         {
@@ -570,7 +588,6 @@ impl Database {
             "sparkler:disallow_anonymous",
             "sparkler:require_account",
             "sparkler:private_social",
-            "sparkler:block_list",
             "sparkler:filter",
         ]
     }
@@ -656,6 +673,51 @@ impl Database {
         match sqlquery(query)
             .bind::<&String>(tokens)
             .bind::<&String>(ips)
+            .bind::<&String>(&name)
+            .execute(c)
+            .await
+        {
+            Ok(_) => {
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.profile:{}", name))
+                    .await;
+
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.authman.profile:{}", ua.id))
+                    .await;
+
+                Ok(())
+            }
+            Err(_) => Err(AuthError::Other),
+        }
+    }
+
+    /// Update a [`Profile`]'s badges by its `username`
+    pub async fn edit_profile_badges_by_name(
+        &self,
+        name: String,
+        badges: Vec<(String, String, String)>,
+    ) -> Result<()> {
+        // make sure user exists
+        let ua = match self.get_profile_by_username(name.clone()).await {
+            Ok(ua) => ua,
+            Err(e) => return Err(e),
+        };
+
+        // update user
+        let query: &str = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
+            "UPDATE \"xprofiles\" SET \"badges\" = ? WHERE \"username\" = ?"
+        } else {
+            "UPDATE \"xprofiles\" SET (\"badges\") = ($1) WHERE \"username\" = $2"
+        };
+
+        let c = &self.base.db.client;
+        let badges = &serde_json::to_string(&badges).unwrap();
+
+        match sqlquery(query)
+            .bind::<&String>(badges)
             .bind::<&String>(&name)
             .execute(c)
             .await

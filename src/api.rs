@@ -1,8 +1,8 @@
 //! Responds to API requests
 use crate::database::Database;
 use crate::model::{
-    AuthError, IpBanCreate, Permission, ProfileCreate, ProfileLogin, SetProfileGroup,
-    SetProfileMetadata, SetProfilePassword, SetProfileUsername, WarningCreate,
+    AuthError, IpBanCreate, Permission, ProfileCreate, ProfileLogin, SetProfileBadges,
+    SetProfileGroup, SetProfileMetadata, SetProfilePassword, SetProfileUsername, WarningCreate,
 };
 use axum::body::Bytes;
 use axum::http::{HeaderMap, HeaderValue};
@@ -25,6 +25,7 @@ pub fn routes(database: Database) -> Router {
         .route("/profile/:username/password", post(set_password_request))
         .route("/profile/:username/username", post(set_username_request))
         .route("/profile/:username/metadata", post(update_metdata_request))
+        .route("/profile/:username/badges", delete(update_badges_request))
         .route("/profile/:username/avatar", get(profile_avatar_request))
         .route("/profile/:username", delete(delete_other_request))
         .route("/profile/:username", get(profile_inspect_request))
@@ -1033,6 +1034,109 @@ pub async fn update_metdata_request(
     // return
     match database
         .edit_profile_metadata_by_name(username, props.metadata)
+        .await
+    {
+        Ok(_) => Json(DefaultReturn {
+            success: true,
+            message: "Acceptable".to_string(),
+            payload: (),
+        }),
+        Err(e) => Json(DefaultReturn {
+            success: false,
+            message: e.to_string(),
+            payload: (),
+        }),
+    }
+}
+
+/// Update a user's metadata
+pub async fn update_badges_request(
+    jar: CookieJar,
+    Path(username): Path<String>,
+    State(database): State<Database>,
+    Json(props): Json<SetProfileBadges>,
+) -> impl IntoResponse {
+    // get user from token
+    let auth_user = match jar.get("__Secure-Token") {
+        Some(c) => match database
+            .get_profile_by_unhashed(c.value_trimmed().to_string())
+            .await
+        {
+            Ok(ua) => ua,
+            Err(e) => {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: (),
+                });
+            }
+        },
+        None => {
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            });
+        }
+    };
+
+    // check permission
+    let group = match database.get_group_by_id(auth_user.group).await {
+        Ok(g) => g,
+        Err(e) => {
+            return Json(DefaultReturn {
+                success: false,
+                message: e.to_string(),
+                payload: (),
+            })
+        }
+    };
+
+    if !group.permissions.contains(&Permission::Manager) {
+        // we must have the "Manager" permission to edit other users
+        return Json(DefaultReturn {
+            success: false,
+            message: AuthError::NotAllowed.to_string(),
+            payload: (),
+        });
+    }
+
+    // get other user
+    let other_user = match database.get_profile_by_username(username.clone()).await {
+        Ok(ua) => ua,
+        Err(e) => {
+            return Json(DefaultReturn {
+                success: false,
+                message: e.to_string(),
+                payload: (),
+            });
+        }
+    };
+
+    // check permission
+    let group = match database.get_group_by_id(other_user.group).await {
+        Ok(g) => g,
+        Err(e) => {
+            return Json(DefaultReturn {
+                success: false,
+                message: e.to_string(),
+                payload: (),
+            })
+        }
+    };
+
+    if group.permissions.contains(&Permission::Manager) {
+        // we cannot manager other managers
+        return Json(DefaultReturn {
+            success: false,
+            message: AuthError::NotAllowed.to_string(),
+            payload: (),
+        });
+    }
+
+    // return
+    match database
+        .edit_profile_badges_by_name(username, props.badges)
         .await
     {
         Ok(_) => Json(DefaultReturn {
