@@ -541,7 +541,7 @@ impl Database {
             .bind::<i32>(0)
             .bind::<&String>(&salt)
             .bind::<&String>(&serde_json::to_string::<Vec<String>>(&vec![user_ip]).unwrap())
-            .bind::<&str>("")
+            .bind::<&str>("[]")
             .execute(c)
             .await
         {
