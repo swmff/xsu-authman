@@ -1092,8 +1092,8 @@ pub async fn update_badges_request(
         }
     };
 
-    if !group.permissions.contains(&Permission::Manager) {
-        // we must have the "Manager" permission to edit other users
+    if !group.permissions.contains(&Permission::Helper) {
+        // we must have the "Helper" permission to edit other users' badges
         return Json(DefaultReturn {
             success: false,
             message: AuthError::NotAllowed.to_string(),
@@ -1114,7 +1114,7 @@ pub async fn update_badges_request(
     };
 
     // check permission
-    let group = match database.get_group_by_id(other_user.group).await {
+    let other_group = match database.get_group_by_id(other_user.group).await {
         Ok(g) => g,
         Err(e) => {
             return Json(DefaultReturn {
@@ -1125,8 +1125,10 @@ pub async fn update_badges_request(
         }
     };
 
-    if group.permissions.contains(&Permission::Manager) {
-        // we cannot manager other managers
+    if other_group.permissions.contains(&Permission::Helper)
+        && !group.permissions.contains(&Permission::Manager)
+    {
+        // we cannot manage other helpers without manager
         return Json(DefaultReturn {
             success: false,
             message: AuthError::NotAllowed.to_string(),
