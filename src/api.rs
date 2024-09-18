@@ -25,7 +25,7 @@ pub fn routes(database: Database) -> Router {
         .route("/profile/:username/password", post(set_password_request))
         .route("/profile/:username/username", post(set_username_request))
         .route("/profile/:username/metadata", post(update_metdata_request))
-        .route("/profile/:username/badges", delete(update_badges_request))
+        .route("/profile/:username/badges", post(update_badges_request))
         .route("/profile/:username/avatar", get(profile_avatar_request))
         .route("/profile/:username", delete(delete_other_request))
         .route("/profile/:username", get(profile_inspect_request))
