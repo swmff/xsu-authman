@@ -1797,6 +1797,54 @@ impl Database {
         count
     }
 
+    /// Get all notifications by their recipient, 50 at a time
+    ///
+    /// ## Arguments:
+    /// * `recipient`
+    /// * `page`
+    pub async fn get_notifications_by_recipient_paginated(
+        &self,
+        recipient: String,
+        page: i32,
+    ) -> Result<Vec<Notification>> {
+        // pull from database
+        let query: String = if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql")
+        {
+            format!("SELECT * FROM \"xnotifications\" WHERE \"recipient\" = ? ORDER BY \"timestamp\" DESC LIMIT 50 OFFSET {}", page * 50)
+        } else {
+            format!("SELECT * FROM \"xnotifications\" WHERE \"recipient\" = $1 ORDER BY \"timestamp\" DESC LIMIT 50 OFFSET {}", page * 50)
+        };
+
+        let c = &self.base.db.client;
+        let res = match sqlquery(&query)
+            .bind::<&String>(&recipient.to_lowercase())
+            .fetch_all(c)
+            .await
+        {
+            Ok(p) => {
+                let mut out: Vec<Notification> = Vec::new();
+
+                for row in p {
+                    let res = self.base.textify_row(row, Vec::new()).0;
+                    out.push(Notification {
+                        title: res.get("title").unwrap().to_string(),
+                        content: res.get("content").unwrap().to_string(),
+                        address: res.get("address").unwrap().to_string(),
+                        timestamp: res.get("timestamp").unwrap().parse::<u128>().unwrap(),
+                        id: res.get("id").unwrap().to_string(),
+                        recipient: res.get("recipient").unwrap().to_string(),
+                    });
+                }
+
+                out
+            }
+            Err(_) => return Err(AuthError::NotFound),
+        };
+
+        // return
+        Ok(res)
+    }
+
     // SET
     /// Create a new notification
     ///
