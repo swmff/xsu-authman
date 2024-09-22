@@ -2388,7 +2388,7 @@ impl Database {
     /// * `props` - [`IpBanCreate`]
     /// * `user` - the user creating this ban
     pub async fn create_ipban(&self, props: IpBanCreate, user: Profile) -> Result<()> {
-        // make sure user is a manager
+        // make sure user is a helper
         let group = match self.get_group_by_id(user.group).await {
             Ok(g) => g,
             Err(_) => return Err(AuthError::Other),
@@ -2396,6 +2396,19 @@ impl Database {
 
         if !group.permissions.contains(&Permission::Helper) {
             return Err(AuthError::NotAllowed);
+        } else {
+            let actor_id = user.id.clone();
+            if let Err(e) = self
+                .create_notification(NotificationCreate {
+                    title: format!("[{actor_id}](/+u/{actor_id})"),
+                    content: format!("Banned an IP: {}", props.ip),
+                    address: format!("/+u/{actor_id}"),
+                    recipient: "*(audit)".to_string(), // all staff, audit
+                })
+                .await
+            {
+                return Err(e);
+            }
         }
 
         // make sure this ip isn't already banned
@@ -2442,14 +2455,14 @@ impl Database {
     /// * `id` - the ID of the ban
     /// * `user` - the user doing this
     pub async fn delete_ipban(&self, id: String, user: Profile) -> Result<()> {
-        // make sure warning exists
-        let warning = match self.get_ipban(id.clone()).await {
+        // make sure ban exists
+        let ipban = match self.get_ipban(id.clone()).await {
             Ok(n) => n,
             Err(e) => return Err(e),
         };
 
         // check id
-        if user.id != warning.moderator.id {
+        if user.id != ipban.moderator.id {
             // check permission
             let group = match self.get_group_by_id(user.group).await {
                 Ok(g) => g,
@@ -2458,6 +2471,19 @@ impl Database {
 
             if !group.permissions.contains(&Permission::Manager) {
                 return Err(AuthError::NotAllowed);
+            } else {
+                let actor_id = user.id.clone();
+                if let Err(e) = self
+                    .create_notification(NotificationCreate {
+                        title: format!("[{actor_id}](/+u/{actor_id})"),
+                        content: format!("Unbanned an IP: {}", ipban.ip),
+                        address: format!("/+u/{actor_id}"),
+                        recipient: "*(audit)".to_string(), // all staff, audit
+                    })
+                    .await
+                {
+                    return Err(e);
+                }
             }
         }
 

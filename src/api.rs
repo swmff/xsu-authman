@@ -1,8 +1,9 @@
 //! Responds to API requests
 use crate::database::Database;
 use crate::model::{
-    AuthError, IpBanCreate, Permission, ProfileCreate, ProfileLogin, SetProfileBadges,
-    SetProfileGroup, SetProfileMetadata, SetProfilePassword, SetProfileUsername, WarningCreate,
+    AuthError, IpBanCreate, NotificationCreate, Permission, ProfileCreate, ProfileLogin,
+    SetProfileBadges, SetProfileGroup, SetProfileMetadata, SetProfilePassword, SetProfileUsername,
+    WarningCreate,
 };
 use axum::body::Bytes;
 use axum::http::{HeaderMap, HeaderValue};
@@ -1197,15 +1198,6 @@ pub async fn delete_other_request(
             }
         };
 
-        if !group.permissions.contains(&Permission::Manager) {
-            // we must have the "Manager" permission to edit other users
-            return Json(DefaultReturn {
-                success: false,
-                message: AuthError::NotAllowed.to_string(),
-                payload: (),
-            });
-        }
-
         // get other user
         let other_user = match database.get_profile_by_id(id.clone()).await {
             Ok(ua) => ua,
@@ -1217,6 +1209,32 @@ pub async fn delete_other_request(
                 });
             }
         };
+
+        if !group.permissions.contains(&Permission::Manager) {
+            // we must have the "Manager" permission to edit other users
+            return Json(DefaultReturn {
+                success: false,
+                message: AuthError::NotAllowed.to_string(),
+                payload: (),
+            });
+        } else {
+            let actor_id = auth_user.id;
+            if let Err(e) = database
+                .create_notification(NotificationCreate {
+                    title: format!("[{actor_id}](/+u/{actor_id})"),
+                    content: format!("Deleted a profile: @{}", other_user.username),
+                    address: format!("/+u/{actor_id}"),
+                    recipient: "*(audit)".to_string(), // all staff, audit
+                })
+                .await
+            {
+                return Json(DefaultReturn {
+                    success: false,
+                    message: e.to_string(),
+                    payload: (),
+                });
+            }
+        }
 
         // check permission
         let group = match database.get_group_by_id(other_user.group).await {
