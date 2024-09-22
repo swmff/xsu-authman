@@ -841,8 +841,10 @@ impl Database {
         &self,
         name: String,
         password: String,
-        new_name: String,
+        mut new_name: String,
     ) -> Result<()> {
+        new_name = new_name.to_lowercase();
+
         // make sure user exists
         let ua = match self.get_profile_by_username(name.clone()).await {
             Ok(ua) => ua,
