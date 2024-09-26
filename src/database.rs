@@ -1039,6 +1039,28 @@ impl Database {
                     return Err(AuthError::Other);
                 };
 
+                // relationships involving user
+                let query: &str =
+                    if (self.base.db.r#type == "sqlite") | (self.base.db.r#type == "mysql") {
+                        "DELETE FROM \"xrelationships\" WHERE \"one\" = ? OR \"two\" = ?"
+                    } else {
+                        "DELETE FROM \"xrelationships\" WHERE \"one\" = $1 OR \"two\" = $2"
+                    };
+
+                if let Err(_) = sqlquery(query)
+                    .bind::<&String>(&id)
+                    .bind::<&String>(&id)
+                    .execute(c)
+                    .await
+                {
+                    return Err(AuthError::Other);
+                };
+
+                self.base
+                    .cachedb
+                    .remove(format!("xsulib.sparkler.friends_count:{}", id))
+                    .await;
+
                 // ...
                 self.base
                     .cachedb
